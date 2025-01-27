@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="script-src 'self' 'unsafe-inline';" />
+    <title>pm</title>
+    <style>
+        html, body {
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+
+            font-family: "Roboto", sans-serif;
+            font-size: 14px;
+        }
+
+        #main {
+            height: 100%;
+            width: 100%;
+            display: grid;
+            grid: auto / 300px 1fr;
+        }
+    </style>
+</head>
+<body>
+    <div id="main">
+        <pm-sidebar></pm-sidebar>
+        <pm-chatview class="viewpane"></pm-chatview>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "@venajs/core": "../node_modules/@venajs/core/build/index.js"
+            }
+        }
+    </script>
+    <script type="module">
+        import './components/sidebar.js';
+        import './components/chatview.js';
+    </script>
+</body>
+</html>
