@@ -83,7 +83,9 @@ const actions = [
     interface: 'UpdateKnowledgeBaseAction',
     definition: `interface UpdateKnowledgeBaseAction {
       action: "knowledgebase.update";
-      content: string; // use the knowledge base to store information that is useful for anyone working on the project
+      // use the knowledge base to store information that is useful for anyone working on the project
+      // it is useful to continually update this with new information as it is discovered or produced
+      content: string;
 }`
   },
 

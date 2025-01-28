@@ -8,6 +8,7 @@
   "private": true,
   "dependencies": {
     "@venajs/core": "^1.0.2-alpha",
-    "electron": "^34.0.1"
+    "electron": "^34.0.1",
+    "he": "^1.2.0"
   }
 }

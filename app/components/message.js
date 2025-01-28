@@ -1,5 +1,7 @@
 import { registerComponent, element, Signal } from '@venajs/core';
 
+const sanitize = x => he.encode(x);
+
 registerComponent('l-message', ({ render, attributes }) => {
   const message = attributes.message;
   const debugging = new Signal(false);
@@ -41,25 +43,25 @@ registerComponent('l-message', ({ render, attributes }) => {
         <section>
           <strong onclick=${() => debugging.value = !debugging.value}>${role}</strong>
           ${Signal.from(message, debugging).map(() => {
-          if (debugging.value) {
-            return element`<pre>${content.replace(/ /g, '&nbsp;')}</pre>`;
-          }
+            if (debugging.value) {
+              return element`<pre>${sanitize(content)}</pre>`;
+            }
 
-          return element`<div>
-                  <pre>${(extracted ?? content).replace(/ /g, '&nbsp;')}</pre>
-                  ${!actions ? "" : actions?.filter(({ action }) => !!action).map(({ action }, idx) => {
-                    const isExpanded = new Signal(false);
-                    return element`
-                      <div>
-                        <div class="action" onclick=${() => isExpanded.value = !isExpanded.value}>
-                          ${action.action}
-                        </div>
-                        ${isExpanded.map(isExpanded => isExpanded ? element`<pre>${JSON.stringify(action, null, 2)}\n\n${actionResults[idx]}</pre>` : "")}
-                      </div>
-                    `;
-                  })}
-                </div>`;
-        })}
+            return element`<div>
+              <pre>${sanitize(extracted ?? content)}</pre>
+              ${!actions ? "" : actions?.filter(({ action }) => !!action).map(({ action }, idx) => {
+              const isExpanded = new Signal(false);
+              return element`
+                <div>
+                  <div class="action" onclick=${() => isExpanded.value = !isExpanded.value}>
+                    ${sanitize(action.action)}
+                  </div>
+                  ${isExpanded.map(isExpanded => isExpanded ? element`<pre>${sanitize(JSON.stringify(action, null, 2))}\n\n${sanitize(actionResults[idx])}</pre>` : "")}
+                </div>
+              `;
+            })}
+          </div>`;
+          })}
         </section>
       `;
   })}
