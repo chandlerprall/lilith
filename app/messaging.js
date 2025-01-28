@@ -1,5 +1,5 @@
 import { ProxySignal, Signal } from '@venajs/core';
-import project, { updateLog } from './project.js';
+import project, { clearLog, updateLog } from './project.js';
 import { actionContext, executeAction } from './actions.js';
 
 export const isBusy = new Signal(false);
@@ -24,15 +24,17 @@ ${project.issues.value.map(({ id, name, closed }) => `* (${id}) ${name}${closed 
 
 # Messaging
     
-All of the engineer's responses always start with their reasoned thought on the request, followed by a valid JSON array indicating the responses and/or actions to take. The free text before the JSON array is like a scratch pad the engineer can use to keep track of their thoughts. The JSON array objects have the shape:
+All of the engineer's responses are a valid JSON array containing the responses and/or actions to take. There is no free text before or after the JSON array. The JSON array contains objects with the shape:
 
 \`\`\`typescript
 interface SpeakResponse {
   type: "speak";
+  reason: string; // describe the thought behind or reason for saying this
   response: string;
 }
 interface ActionResponse {
   type: "action";
+  reason: string; // describe the thought behind or reason for taking this action
   action: Action;
 }
 
@@ -46,25 +48,7 @@ SpeakResponse responses are delivered back to the engineer's boss for him to res
 Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue.`;
 }
 
-export const messages = new ProxySignal([
-  {
-    role: 'system',
-    extracted: '[context]',
-    content: ''
-  },
-  {
-    role: 'assistant',
-    extracted: 'How can I help today?',
-    content: `I want to appear friendly, helpful, and cheerful to my boss. I should greet them and offer my help.
-
-[
-  {
-    "type": "speak",
-    "response": "How can I help today?"
-  }
-]`
-  }
-]);
+export const messages = new ProxySignal(getInitialMessages());
 messages.push(...project.log);
 
 export const sendMessages = async () => {
@@ -78,10 +62,9 @@ export const sendMessages = async () => {
       method: 'POST',
       body: JSON.stringify({
         mode: "instruct",
-        character: "StaffEngineer_json",
         messages: messages.value,
         max_tokens: 4096,
-        temperature: 0.0, // temperature is randomness
+        temperature: 0.0,
         top_p: 1,
         top_k: 1,
         typical_p: 1,
@@ -103,35 +86,15 @@ export const sendMessages = async () => {
     actions: [],
     actionResults: [],
   };
-  messages.push(persistedMessage);
 
   let actionResults = persistedMessage.actionResults;
   let speakResults = '';
-  // reverse parse the JSON array at the end of the message content
   const trimmedMessage = message.content.trim();
-  if (trimmedMessage[trimmedMessage.length - 1] !== ']') {
-    updateLog(persistedMessage);
-    sendMessage('The JSON array at the end of the message is malformed (no closing bracket)');
-    return;
-  }
-  let json = '';
-  let openBrackets = 0; // only need to track brackets, it must be a valid JSON array
-  for (let i = trimmedMessage.length - 1; i >= 0; i--) {
-    if (trimmedMessage[i] === ']') {
-      openBrackets++;
-    } else if (trimmedMessage[i] === '[') {
-      openBrackets--;
-    }
-    json = trimmedMessage[i] + json;
-    if (openBrackets === 0) {
-      break;
-    }
-  }
-
   let actions;
   try {
-    actions = JSON.parse(json);
+    actions = JSON.parse(trimmedMessage);
   } catch (error) {
+    messages.push(persistedMessage);
     updateLog(persistedMessage);
     sendMessage(`The JSON array at the end of the message is malformed:\n${error.stack}`);
     return;
@@ -155,6 +118,7 @@ export const sendMessages = async () => {
   persistedMessage.actions = actions;
   persistedMessage.actionResults = actionResults;
 
+  messages.push(persistedMessage);
   updateLog(persistedMessage);
   isBusy.value = false;
 
@@ -169,4 +133,31 @@ export const sendMessage = async content => {
   updateLog(message);
   messages.push(message);
   sendMessages();
+}
+
+export const resetMessages = () => {
+  messages.value = getInitialMessages();
+  project.log.value = [];
+  clearLog();
+}
+
+function getInitialMessages() {
+  return [
+    {
+      role: 'system',
+      extracted: '[context]',
+      content: ''
+    },
+    {
+      role: 'assistant',
+      extracted: 'How can I help today?',
+      content: `[
+    {
+      "type": "speak",
+      "reason": "I want to appear friendly, helpful, and cheerful to my boss. I should greet them and offer my help.",
+      "response": "How can I help today?"
+    }
+  ]`
+    }
+  ]
 }

@@ -52,6 +52,11 @@ export const updateLog = (msg) => {
   writeProject();
 }
 
+export const clearLog = () => {
+  project.log = [];
+  writeProject();
+}
+
 const writeProject = () => {
   writeFileSync(projectFilePath, JSON.stringify(project, null, 2));
 }
