@@ -19,7 +19,7 @@
             height: 100%;
             width: 100%;
             display: grid;
-            grid: auto / 300px 1fr;
+            grid: auto / 200px 1fr;
         }
     </style>
 </head>
@@ -38,6 +38,10 @@
         }
     </script>
     <script src="../node_modules/he/he.js"></script>
+    <script type="module">
+      import project from './project.js';
+      process.chdir(project.directory);
+    </script>
     <script type="module">
       import './components/message.js';
       import './components/sidebar.js';

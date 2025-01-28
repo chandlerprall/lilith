@@ -70,20 +70,21 @@ const actions = [
     },
     interface: 'ShellAction',
     definition: `interface ShellAction {
+    // **WARNING** do not start a non-terminating process here, it will block forever
   action: "shell";
   command: string; // command to execute in a new ${process.platform} shell, stdout and stderr are returned; pwd defaults to project directory
 }`
   },
 
   {
-    action: 'knowledgebase.update',
+    action: 'knowledgebase.write',
     async handler({ content }) {
       setKnowledgeBase(content);
-      return `Knowledgebase updated`;
+      return `Knowledgebase written`;
     },
-    interface: 'UpdateKnowledgeBaseAction',
-    definition: `interface UpdateKnowledgeBaseAction {
-      action: "knowledgebase.update";
+    interface: 'WriteKnowledgeBaseAction',
+    definition: `interface WriteKnowledgeBaseAction {
+      action: "knowledgebase.write";
       // use the knowledge base to store information that is useful for anyone working on the project
       // it is useful to continually update this with new information as it is discovered or produced
       content: string;

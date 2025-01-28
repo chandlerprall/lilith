@@ -3,6 +3,9 @@ import project, { clearLog, updateLog } from './project.js';
 import { actionContext, executeAction } from './actions.js';
 
 export const isBusy = new Signal(false);
+export const allowAutoRun = new Signal(true);
+
+export const tokenUsage = new Signal(null);
 
 function generateContext() {
   return `The following is an interface log between a staff software engineer and their boss.
@@ -53,7 +56,9 @@ type Response = Array<SpeakResponse | ActionResponse>;
 
 SpeakResponse responses are delivered back to the engineer's boss for him to respond, while the results of actions are delivered back to the staff engineer for them to continue on.
 
-Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue.`;
+Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue. They are a self-starter, but check in with their boss to ensure they are on the right track.
+
+Also the engineer does not start the development server, or any other commands that aren't meant to terminate.`;
 }
 
 export const messages = new ProxySignal(getInitialMessages());
@@ -85,6 +90,7 @@ export const sendMessages = async () => {
     },
   );
   const parsed = await response.json();
+  tokenUsage.value = parsed.usage.total_tokens;
   const message = parsed.choices[0].message;
 
   const persistedMessage = {
@@ -142,7 +148,9 @@ export const sendMessage = async content => {
   const message = { role: 'user', content };
   updateLog(message);
   messages.push(message);
-  sendMessages();
+  if (allowAutoRun.value) {
+    sendMessages();
+  }
 }
 
 export const resetMessages = () => {

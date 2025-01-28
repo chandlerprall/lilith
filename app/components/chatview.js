@@ -1,5 +1,5 @@
 import { registerComponent, element } from '@venajs/core';
-import { isBusy as isMessagingBusy, sendMessage, messages, resetMessages } from '../messaging.js';
+import { isBusy as isMessagingBusy, sendMessage, messages, resetMessages, allowAutoRun, sendMessages, tokenUsage } from '../messaging.js';
 
 registerComponent('l-chatview', ({ render, refs }) => {
   const handleMessageKeyDown = (event) => {
@@ -42,18 +42,34 @@ registerComponent('l-chatview', ({ render, refs }) => {
           outline: none;
         }
       }
+
+      .meta {
+        font-weight: normal;
+        display: inline-block;
+        font-size: 12px;
+      }
     </style>
     
     <h2>
       chat
-      <button onclick=${resetMessages}>clear</button>
+      <div class="meta">
+        <button onclick=${resetMessages}>clear</button>
+        tokens used: ${tokenUsage}
+        <input type="checkbox" checked=${allowAutoRun} onchange=${e => {
+          allowAutoRun.value = e.target.checked;
+
+          if (e.target.checked) {
+            sendMessages();
+          }
+        }} /> auto-run
+      </div>
     </h2>
     <div id="messages">
       ${messages.map(messages => {
-        return messages.map((message) => {
-          return element`<l-message message=${message}></l-message>`;
-        })
-      })}
+      return messages.map((message) => {
+        return element`<l-message message=${message}></l-message>`;
+      })
+    })}
     </div>
     <textarea
       id="message"
