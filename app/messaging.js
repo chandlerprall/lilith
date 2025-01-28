@@ -1,5 +1,5 @@
 import { ProxySignal, Signal } from '@venajs/core';
-import project from './project.js';
+import project, { updateLog } from './project.js';
 import { actionContext, executeAction } from './actions.js';
 
 export const isBusy = new Signal(false);
@@ -10,6 +10,8 @@ function generateContext() {
 They are working on the following project
 
 # ${project.name}
+
+Files are located at ${project.directory}
 
 ## About
 
@@ -63,6 +65,7 @@ export const messages = new ProxySignal([
 ]`
   }
 ]);
+messages.push(...project.log);
 
 export const sendMessages = async () => {
   isBusy.value = true;
@@ -107,6 +110,7 @@ export const sendMessages = async () => {
   // reverse parse the JSON array at the end of the message content
   const trimmedMessage = message.content.trim();
   if (trimmedMessage[trimmedMessage.length - 1] !== ']') {
+    updateLog(persistedMessage);
     sendMessage('The JSON array at the end of the message is malformed (no closing bracket)');
     return;
   }
@@ -128,6 +132,7 @@ export const sendMessages = async () => {
   try {
     actions = JSON.parse(json);
   } catch (error) {
+    updateLog(persistedMessage);
     sendMessage(`The JSON array at the end of the message is malformed:\n${error.stack}`);
     return;
   }
@@ -150,14 +155,18 @@ export const sendMessages = async () => {
   persistedMessage.actions = actions;
   persistedMessage.actionResults = actionResults;
 
+  updateLog(persistedMessage);
   isBusy.value = false;
 
   if (actionResults.length) {
     sendMessage(`action results\n----------\n${actionResults.join('\n----------\n')}`);
+    return;
   }
 }
 
 export const sendMessage = async content => {
-  messages.push({ role: 'user', content });
+  const message = { role: 'user', content };
+  updateLog(message);
+  messages.push(message);
   sendMessages();
 }

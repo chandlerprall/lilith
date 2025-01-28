@@ -30,15 +30,6 @@ registerComponent('pm-chatview', ({ render, refs }) => {
         flex: 1;
         overflow-y: auto;
         padding: 10px;
-        
-        .message {
-          strong {
-            color: #666;
-          }
-          pre {
-              
-          }
-        }
       }
       
       textarea {
@@ -56,11 +47,8 @@ registerComponent('pm-chatview', ({ render, refs }) => {
     <h2>chat</h2>
     <div id="messages">
       ${messages.map(messages => {
-    return messages.map(({ role, extracted, content }) => {
-      return element`<div class="message">
-        <strong>${role}</strong>
-        <pre>${extracted ?? content}</pre>
-      </div>`;
+    return messages.map((message) => {
+      return element`<pm-message message=${message}></pm-message>`;
     })
   })}    
     </div>

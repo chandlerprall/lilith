@@ -27,14 +27,15 @@ registerComponent('pm-sidebar', ({ render }) => {
         [data-closed] {
           text-decoration: line-through}
         }
+      }
     </style>
     
     <section>
       <h2>issues</h2>
       <ol class="issues">
         ${project.issues.map(issues => issues.map(issue => {
-          return element`<li ${issue.closed ? 'data-closed' : ''}>${issue.name}</li>`;
-        }))}
+    return element`<li ${issue.closed ? 'data-closed' : ''}>${issue.name}</li>`;
+  }))}
       </ol>
     </section>
   `;

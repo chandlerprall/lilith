@@ -27,7 +27,7 @@ export const writeIssue = (name, definition) => {
     project.issues.push(returnedIssue);
   }
 
-  writeFileSync(projectFilePath, JSON.stringify(project, null, 2));
+  writeProject();
 
   return returnedIssue;
 }
@@ -40,9 +40,18 @@ export const closeIssue = (id) => {
     throw new Error(`Issue ${id} not found`);
   }
 
-  writeFileSync(projectFilePath, JSON.stringify(project, null, 2));
+  writeProject();
 }
 
 function quickRandomId(length = 6) {
   return Math.random().toString(36).substring(2, 2 + length);
+}
+
+export const updateLog = (msg) => {
+  project.log.push(msg);
+  writeProject();
+}
+
+const writeProject = () => {
+  writeFileSync(projectFilePath, JSON.stringify(project, null, 2));
 }

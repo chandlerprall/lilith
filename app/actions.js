@@ -1,4 +1,4 @@
-import { closeIssue, writeIssue } from "./project.js";
+import project, { closeIssue, writeIssue } from "./project.js";
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const execAsync = promisify(exec);
@@ -58,6 +58,19 @@ const actions = [
   action: "issues.close";
   id: string; // id of the issue to close
 }`,
+  },
+
+  {
+    action: 'shell',
+    async handler({ command }) {
+      const { stdout, stderr } = await execAsync(command, { cwd: project.directory });
+      return `stdout\n----------\n${stdout}\nstderr\n----------\n${stderr}`;
+    },
+    interface: 'ShellAction',
+    definition: `interface ShellAction {
+  action: "shell";
+  command: string; // command to execute in a new shell, stdout and stderr are returned; pwd defaults to project directory
+}`
   },
 ];
 
