@@ -1,7 +1,7 @@
 import { registerComponent, element } from '@venajs/core';
 import { isBusy as isMessagingBusy, sendMessage, messages, resetMessages } from '../messaging.js';
 
-registerComponent('pm-chatview', ({ render, refs }) => {
+registerComponent('l-chatview', ({ render, refs }) => {
   const handleMessageKeyDown = (event) => {
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
       const message = refs.message.value;
@@ -51,7 +51,7 @@ registerComponent('pm-chatview', ({ render, refs }) => {
     <div id="messages">
       ${messages.map(messages => {
     return messages.map((message) => {
-      return element`<pm-message message=${message}></pm-message>`;
+      return element`<l-message message=${message}></l-message>`;
     })
   })}    
     </div>

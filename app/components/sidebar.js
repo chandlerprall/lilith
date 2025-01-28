@@ -1,7 +1,7 @@
 import { registerComponent, element } from '@venajs/core';
 import project from '../project.js';
 
-registerComponent('pm-sidebar', ({ render }) => {
+registerComponent('l-sidebar', ({ render }) => {
   render`
     <style>
       :host {

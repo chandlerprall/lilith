@@ -1,6 +1,6 @@
 import { registerComponent, element, Signal } from '@venajs/core';
 
-registerComponent('pm-message', ({ render, attributes }) => {
+registerComponent('l-message', ({ render, attributes }) => {
   const message = attributes.message;
   const debugging = new Signal(false);
 
