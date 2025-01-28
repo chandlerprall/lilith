@@ -1,4 +1,5 @@
-import { registerComponent } from '@venajs/core';
+import { registerComponent, element } from '@venajs/core';
+import project from '../project.js';
 
 registerComponent('pm-sidebar', ({ render }) => {
   render`
@@ -17,10 +18,24 @@ registerComponent('pm-sidebar', ({ render }) => {
             text-align: center;
         }
       }
+
+      .issues {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+
+        [data-closed] {
+          text-decoration: line-through}
+        }
     </style>
     
     <section>
       <h2>issues</h2>
+      <ol class="issues">
+        ${project.issues.map(issues => issues.map(issue => {
+          return element`<li ${issue.closed ? 'data-closed' : ''}>${issue.name}</li>`;
+        }))}
+      </ol>
     </section>
   `;
 });

@@ -3,7 +3,7 @@ import { isBusy as isMessagingBusy, sendMessage, messages } from '../messaging.j
 
 registerComponent('pm-chatview', ({ render, refs }) => {
   const handleMessageKeyDown = (event) => {
-    if (event.ctrlKey && event.key === 'Enter') {
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
       const message = refs.message.value;
       refs.message.value = '';
       sendMessage(message);
@@ -56,20 +56,18 @@ registerComponent('pm-chatview', ({ render, refs }) => {
     <h2>chat</h2>
     <div id="messages">
       ${messages.map(messages => {
-        console.log('::', messages)
-        return messages.map(({ role, content }) => {
-          return element`<div class="message">
-            <strong>${role}</strong>
-            <pre>${content}</pre>
-          </div>`
-        })
-      })}    
+    return messages.map(({ role, extracted, content }) => {
+      return element`<div class="message">
+        <strong>${role}</strong>
+        <pre>${extracted ?? content}</pre>
+      </div>`;
+    })
+  })}    
     </div>
     <textarea
       id="message"
-      placeholder="your message"
+      disabled=${isMessagingBusy}
+      placeholder=${isMessagingBusy.map(busy => busy ? 'sending...' : 'type a message')}
       onkeydown=${handleMessageKeyDown}></textarea>
   `;
-
-  isMessagingBusy.on(x => console.log('isMessagingBusy?', x))
 });
