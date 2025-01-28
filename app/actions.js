@@ -1,6 +1,7 @@
-import project, { closeIssue, writeIssue } from "./project.js";
+import project, { closeIssue, setFileSummary, setKnowledgeBase, writeIssue } from "./project.js";
 const { exec } = require('child_process');
 const { promisify } = require('util');
+const { readFileSync, writeFileSync, unlinkSync } = require('fs');
 const execAsync = promisify(exec);
 
 const actions = [
@@ -70,6 +71,58 @@ const actions = [
     definition: `interface ShellAction {
   action: "shell";
   command: string; // command to execute in a new shell, stdout and stderr are returned; pwd defaults to project directory
+}`
+  },
+
+  {
+    action: 'knowledgebase.update',
+    async handler({ content }) {
+      setKnowledgeBase(content);
+      return `Knowledgebase updated`;
+    },
+    interface: 'UpdateKnowledgeBaseAction',
+    definition: `interface UpdateKnowledgeBaseAction {
+      action: "knowledgebase.update";
+      content: string; // use the knowledge base to store information that is useful for anyone working on the project
+}`
+  },
+
+  {
+    action: 'file.write',
+    async handler({ path, summary, content }) {
+      writeFileSync(`${project.directory}/${path}`, content);
+      setFileSummary(path, summary);
+      return `File written to ${path}`;
+    },
+    interface: 'FileWriteAction',
+    definition: `interface FileWriteAction {
+      action: "file.write";
+      path: string;
+      summary: string; // short summary of the whole file (**NOT A CHANGE DESCRIPTION**), is saved in the project description for future reference
+      content: string; // file contents
+}`
+  },
+  {
+    action: 'file.read',
+    async handler({ path }) {
+      return readFileSync(`${project.directory}/${path}`, 'utf8');
+    },
+    interface: 'FileReadAction',
+    definition: `interface FileReadAction {
+      action: "file.read";
+      path: string;
+}`
+  },
+  {
+    action: 'file.delete',
+    async handler({ path }) {
+      unlinkSync(path);
+      return `File deleted at ${path}`;
+    },
+    interface: 'FileDeleteAction',
+    definition: `interface FileDeleteAction {
+      action: "file.delete";
+      path: string; // file OR DIRECTORY to unlink
 }`
   },
 ];

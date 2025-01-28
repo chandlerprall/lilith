@@ -22,6 +22,14 @@ ${project.context}
 
 ${project.issues.value.map(({ id, name, closed }) => `* (${id}) ${name}${closed ? ' (closed)' : ' (open)'}`).join('\n')}
 
+## File summaries
+
+${Object.keys(project.fileSummaries).length === 0 ? "no files summarized" : Object.entries(project.fileSummaries).map(([path, summary]) => `* ${path}: ${summary}`).join('\n')}
+
+## Knowledge base
+
+${project.knowledgeBase ?? "no knowledge base set"}
+
 # Messaging
     
 All of the engineer's responses are a valid JSON array containing the responses and/or actions to take. There is no free text before or after the JSON array. The JSON array contains objects with the shape:

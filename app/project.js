@@ -60,3 +60,13 @@ export const clearLog = () => {
 const writeProject = () => {
   writeFileSync(projectFilePath, JSON.stringify(project, null, 2));
 }
+
+export const setFileSummary = (path, summary) => {
+  project.fileSummaries[path] = summary;
+  writeProject();
+}
+
+export const setKnowledgeBase = (kb) => {
+  project.kb = kb;
+  writeProject();
+}
