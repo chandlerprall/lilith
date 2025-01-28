@@ -1,6 +1,6 @@
 import { registerComponent, element, Signal } from '@venajs/core';
 
-const sanitize = x => he.encode(x);
+const sanitize = x => he.encode(x ? typeof x === 'string' ? x : JSON.stringify(x, null, 2) : "");
 
 registerComponent('l-message', ({ render, attributes }) => {
   const message = attributes.message;

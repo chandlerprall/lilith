@@ -119,6 +119,8 @@ export const sendMessages = async () => {
         console.error(e);
         actionResults.push(`Error: ${e.message}`);
       }
+    } else {
+      actionResults.push(`You have an invalid message type, please use 'speak' or 'action'\n\n${JSON.stringify(entry, null, 2)}`);
     }
   }
 

@@ -1,4 +1,5 @@
 import project, { closeIssue, setFileSummary, setKnowledgeBase, writeIssue } from "./project.js";
+import { closePuppeteer, doPuppeteer } from "./puppeteer.js";
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const { readFileSync, writeFileSync, unlinkSync } = require('fs');
@@ -70,7 +71,7 @@ const actions = [
     interface: 'ShellAction',
     definition: `interface ShellAction {
   action: "shell";
-  command: string; // command to execute in a new shell, stdout and stderr are returned; pwd defaults to project directory
+  command: string; // command to execute in a new ${process.platform} shell, stdout and stderr are returned; pwd defaults to project directory
 }`
   },
 
@@ -127,6 +128,33 @@ const actions = [
       path: string; // file OR DIRECTORY to unlink
 }`
   },
+
+  {
+    action: 'puppeteer.run',
+    async handler({ code }) {
+      return await doPuppeteer({ code });
+    },
+    interface: 'PuppeteerAction',
+    definition: `interface PuppeteerAction {
+      // opens or resumes a persistant browser instance
+      // executes in nodejs context where \`browser\` and \`page\` are already available
+      // return the data you want to capture at the end, e.g. return await page.evaluate(() => document.title);
+      action: "puppeteer.run";
+      code: string;
+}`
+  },
+  {
+    action: 'puppeteer.close',
+    async handler() {
+      await closePuppeteer();
+      return "Puppeteer session closed";
+    },
+    interface: 'ClosePuppeteerAction',
+    definition: `interface ClosePuppeteerAction {
+      // destroys the persistant browser instance
+      action: "puppeteer.close";
+}`
+  },
 ];
 
 const actionDefinitions = actions.reduce((acc, action) => {
@@ -145,3 +173,8 @@ export const executeAction = async (action) => {
   }
   return await actionHandler.handler(action);
 }
+
+// (async () => {
+//   const result = await doPuppeteer({ "code": "await page.goto('https://chandlerprall.com'); const title = await page.evaluate(() => document.title); title" });
+//   console.log('::', result);
+// })();
