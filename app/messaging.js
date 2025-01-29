@@ -35,7 +35,7 @@ ${project.knowledgeBase ?? "no knowledge base set"}
 
 # Messaging
     
-All of the engineer's responses are a valid JSON array containing the responses and/or actions to take. There is no free text before or after the JSON array. The JSON array contains objects with the shape:
+All of the engineer's responses are **only ever** a valid JSON array containing the responses and/or actions to take, with no freeform text outside of the JSON strings. There is no free text before or after the JSON array. The JSON array contains objects with the shape:
 
 \`\`\`typescript
 interface SpeakResponse {
@@ -89,6 +89,7 @@ export const sendMessages = async () => {
       },
     },
   );
+
   const parsed = await response.json();
   tokenUsage.value = parsed.usage.total_tokens;
   const message = parsed.choices[0].message;

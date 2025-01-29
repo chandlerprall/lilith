@@ -1,7 +1,7 @@
 import { ProxySignal } from '@venajs/core';
 
 const { writeFileSync } = require('fs');
-const projectFilePath = '/Users/chandlerprall/projects/calc/project.json';
+const projectFilePath = '/Users/chandlerprall/projects/api.json';
 const project = require(projectFilePath)
 
 project.issues = new ProxySignal(project.issues);

@@ -74,7 +74,7 @@ registerComponent('l-chatview', ({ render, refs }) => {
     <textarea
       id="message"
       disabled=${isMessagingBusy}
-      placeholder=${isMessagingBusy.map(busy => busy ? 'sending...' : 'type a message')}
+      placeholder=${isMessagingBusy.map(busy => busy ? 'processing...' : 'type a message')}
       onkeydown=${handleMessageKeyDown}></textarea>
   `;
 });

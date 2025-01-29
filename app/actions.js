@@ -9,7 +9,6 @@ const actions = [
   {
     action: 'calculator',
     handler({ equation }) {
-      console.log('resolving', equation, 'result is', eval(equation));
       return eval(equation);
     },
     interface: 'CalcuatorAction',
@@ -65,12 +64,28 @@ const actions = [
   {
     action: 'shell',
     async handler({ command }) {
-      const { stdout, stderr } = await execAsync(command, { cwd: project.directory });
-      return `stdout\n----------\n${stdout}\nstderr\n----------\n${stderr}`;
+      const process = exec(command, { cwd: project.directory });
+
+      let stdout = '';
+      let stderr = '';
+      
+      process.stdout.on('data', data => stdout += data);
+      process.stderr.on('data', data => stderr += data);
+
+      let didTimeout = false;
+      await new Promise(resolve => {
+        process.on('exit', resolve);
+        setTimeout(() => {
+          didTimeout = true;
+          resolve();
+        }, 60_000);
+      });
+
+      return `${didTimeout ? "**note** this command timed out and was killed after 60 seconds" : ""}stdout\n----------\n${stdout}\nstderr\n----------\n${stderr}`;
     },
     interface: 'ShellAction',
     definition: `interface ShellAction {
-    // **WARNING** do not start a non-terminating process here, it will block forever
+    // **NOTICE** do not start a non-terminating or interactive process here, it will block forever
   action: "shell";
   command: string; // command to execute in a new ${process.platform} shell, stdout and stderr are returned; pwd defaults to project directory
 }`
@@ -94,7 +109,7 @@ const actions = [
   {
     action: 'file.write',
     async handler({ path, summary, content }) {
-      writeFileSync(`${project.directory}/${path}`, content);
+      writeFileSync(path, content);
       setFileSummary(path, summary);
       return `File written to ${path}`;
     },
@@ -109,7 +124,7 @@ const actions = [
   {
     action: 'file.read',
     async handler({ path }) {
-      return readFileSync(`${project.directory}/${path}`, 'utf8');
+      return readFileSync(path, 'utf8');
     },
     interface: 'FileReadAction',
     definition: `interface FileReadAction {
@@ -174,8 +189,3 @@ export const executeAction = async (action) => {
   }
   return await actionHandler.handler(action);
 }
-
-// (async () => {
-//   const result = await doPuppeteer({ "code": "await page.goto('https://chandlerprall.com'); const title = await page.evaluate(() => document.title); title" });
-//   console.log('::', result);
-// })();
