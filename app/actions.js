@@ -68,7 +68,7 @@ const actions = [
 
       let stdout = '';
       let stderr = '';
-      
+
       process.stdout.on('data', data => stdout += data);
       process.stderr.on('data', data => stderr += data);
 
@@ -102,6 +102,7 @@ const actions = [
       action: "knowledgebase.write";
       // use the knowledge base to store information that is useful for anyone working on the project
       // it is useful to continually update this with new information as it is discovered or produced
+      // we encourage markdown formatting
       content: string;
 }`
   },

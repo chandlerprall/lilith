@@ -1,7 +1,7 @@
 import { ProxySignal } from '@venajs/core';
 
 const { writeFileSync } = require('fs');
-const projectFilePath = '/Users/chandlerprall/projects/lilith/example_project.json';
+const projectFilePath = '/Users/chandlerprall/projects/lilith-projects/lilith.json';
 const project = require(projectFilePath)
 
 project.issues = new ProxySignal(project.issues);
@@ -66,7 +66,7 @@ export const setFileSummary = (path, summary) => {
   writeProject();
 }
 
-export const setKnowledgeBase = (kb) => {
-  project.kb = kb;
+export const setKnowledgeBase = (knowledgeBase) => {
+  project.knowledgeBase = knowledgeBase;
   writeProject();
 }

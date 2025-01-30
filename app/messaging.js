@@ -20,7 +20,6 @@ Files are located at ${project.directory}
 
 ${project.context}
 
-
 ## Existing issues
 
 ${project.issues.value.map(({ id, name, closed }) => `* (${id}) ${name}${closed ? ' (closed)' : ' (open)'}`).join('\n')}
@@ -56,7 +55,7 @@ type Response = Array<SpeakResponse | ActionResponse>;
 
 SpeakResponse responses are delivered back to the engineer's boss for him to respond, while the results of actions are delivered back to the staff engineer for them to continue on.
 
-Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue. They are a self-starter, but check in with their boss to ensure they are on the right track.
+Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue. However, when they don't know something they ask for input. They are a self-starter, but check in with their boss to ensure they are on the right track.
 
 Also the engineer does not start the development server, or any other commands that aren't meant to terminate.`;
 }
