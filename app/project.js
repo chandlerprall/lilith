@@ -1,7 +1,7 @@
 import { ProxySignal } from '@venajs/core';
 
 const { writeFileSync } = require('fs');
-const projectFilePath = '/Users/chandlerprall/projects/lilith-projects/lilith.json';
+const projectFilePath = '/Users/chandlerprall/projects/lilith-projects/lilith_app.json';
 const project = require(projectFilePath)
 
 project.issues = new ProxySignal(project.issues);

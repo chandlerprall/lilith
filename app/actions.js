@@ -155,7 +155,12 @@ const actions = [
     definition: `interface PuppeteerAction {
       // opens or resumes a persistant browser instance
       // executes in nodejs context where \`browser\` and \`page\` are already available
-      // return the data you want to capture at the end, e.g. return await page.evaluate(() => document.title);
+      // return the data you want to capture at the end, e.g.
+      //   return await page.evaluate(() => document.title);
+      //     to verify the page title
+      // or
+      //   return await page.content();
+      //     to get the html contents of the page
       action: "puppeteer.run";
       code: string;
 }`

@@ -106,7 +106,16 @@ export const sendMessages = async () => {
   const trimmedMessage = message.content.trim();
   let actions;
   try {
-    actions = JSON.parse(trimmedMessage);
+    try {
+      actions = JSON.parse(trimmedMessage);
+    } catch (e) {
+      try {
+        const jsonBlock = trimmedMessage.match(/^```json\n([\s\S]*)\n```$/)[1];
+        actions = JSON.parse(jsonBlock);
+      } catch (_) {
+        throw e;
+      }
+    }
   } catch (error) {
     messages.push(persistedMessage);
     updateLog(persistedMessage);
