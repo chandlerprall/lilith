@@ -1,4 +1,5 @@
 import { ProxySignal } from '@venajs/core';
+import { getId } from './utils/id.js';
 
 const { writeFileSync } = require('fs');
 const projectFilePath = '/Users/chandlerprall/projects/lilith-projects/lilith_app.json';
@@ -17,12 +18,7 @@ export const writeIssue = (name, definition) => {
     returnedIssue = project.issues.value[existingIdx];
   } else {
     const existingIds = new Set(project.issues.value.map(issue => issue.id));
-
-    let id;
-    while (id == null || existingIds.has(id)) {
-      id = quickRandomId();
-    }
-
+    const id = getId(existingIds);
     returnedIssue = { id, name, definition };
     project.issues.push(returnedIssue);
   }
@@ -41,10 +37,6 @@ export const closeIssue = (id) => {
   }
 
   writeProject();
-}
-
-function quickRandomId(length = 6) {
-  return Math.random().toString(36).substring(2, 2 + length);
 }
 
 export const updateLog = (msg) => {

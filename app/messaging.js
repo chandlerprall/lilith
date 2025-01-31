@@ -1,6 +1,6 @@
 import { ProxySignal, Signal } from '@venajs/core';
 import project, { clearLog, updateLog } from './project.js';
-import { actionContext, executeAction } from './actions.js';
+import { getActionContext, executeAction } from './actions.js';
 
 export const isBusy = new Signal(false);
 export const allowAutoRun = new Signal(true);
@@ -48,16 +48,17 @@ interface ActionResponse {
   action: Action;
 }
 
-${actionContext}
+${getActionContext()}
 
 type Response = Array<SpeakResponse | ActionResponse>;
 \`\`\`
 
 SpeakResponse responses are delivered back to the engineer's boss for him to respond, while the results of actions are delivered back to the staff engineer for them to continue on.
 
-Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue. However, when they don't know something they ask for input. They are a self-starter, but check in with their boss to ensure they are on the right track.
+Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue. However, when they appear suck they ask for input, never making something up. They are a self-starter, using the available tools and actions to solve problems and understand hurdles - but check in with their boss periodically to ensure they are on the right track.
 
-Also the engineer does not start the development server, or any other commands that aren't meant to terminate.`;
+Also the engineer does not start the development server, or any other commands that aren't meant to terminate.
+`;
 }
 
 export const messages = new ProxySignal(getInitialMessages());

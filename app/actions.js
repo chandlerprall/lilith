@@ -1,5 +1,6 @@
-import project, { closeIssue, setFileSummary, setKnowledgeBase, writeIssue } from "./project.js";
+import { closeIssue, setFileSummary, setKnowledgeBase, writeIssue } from "./project.js";
 import { closePuppeteer, doPuppeteer } from "./puppeteer.js";
+import { executeCommand, startTerminal, terminalProcesses } from "./terminal.js";
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const { readFileSync, writeFileSync, unlinkSync } = require('fs');
@@ -62,33 +63,67 @@ const actions = [
   },
 
   {
-    action: 'shell',
-    async handler({ command }) {
-      const process = exec(command, { cwd: project.directory });
-
-      let stdout = '';
-      let stderr = '';
-
-      process.stdout.on('data', data => stdout += data);
-      process.stderr.on('data', data => stderr += data);
-
-      let didTimeout = false;
-      await new Promise(resolve => {
-        process.on('exit', resolve);
-        setTimeout(() => {
-          didTimeout = true;
-          resolve();
-        }, 60_000);
-      });
-
-      return `${didTimeout ? "**note** this command timed out and was killed after 60 seconds" : ""}stdout\n----------\n${stdout}\nstderr\n----------\n${stderr}`;
+    action: 'terminal.start',
+    async handler() {
+      return startTerminal();
     },
-    interface: 'ShellAction',
-    definition: `interface ShellAction {
-    // **NOTICE** do not start a non-terminating or interactive process here, it will block forever
-  action: "shell";
-  command: string; // command to execute in a new ${process.platform} shell, stdout and stderr are returned; pwd defaults to project directory
+    interface: 'StartTerminalAction',
+    definition: `interface StartTerminalAction {
+  // opens a new ${process.platform} terminal in the project directory
+  action: "terminal.start";
 }`
+  },
+  {
+    action: 'terminal.run',
+    async handler({ id, command }) {
+      return await executeCommand(id, command);
+    },
+    interface: 'RunTerminalAction',
+    get definition() {
+      return `interface RunTerminalAction {
+  // executes a command in the ${process.platform} shell
+  // stdout and stderr are returned
+  action: "terminal.run";
+  id: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : 'never'}; // id of the terminal to use
+  command: string;
+}`;
+    },
+  },
+  {
+    action: 'terminal.read',
+    async handler({ id, lineCount }) {
+      const terminalWindow = terminalProcesses[id];
+      if (!terminalWindow) {
+        throw new Error(`Terminal ${id} not found`);
+      }
+      const { output } = terminalWindow;
+      return lineCount ? output.value.split('\n').slice(-lineCount).join('\n') : output.value;
+    },
+    interface: 'ReadTerminalAction',
+    get definition() {
+      return `interface ReadTerminalAction {
+  // executes a command in the ${process.platform} shell
+  // stdout and stderr are returned
+  // cwd defaults to project directory
+  action: "terminal.read";
+  id: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : 'never'}; // id of the terminal to use
+  lineCount?: number; // number of lines to limit read to
+}`;
+    },
+  },
+  {
+    action: 'terminal.close',
+    async handler({ id }) {
+      closeTerminal(id);
+      return "terminal has been closed";
+    },
+    interface: 'CloseTerminalAction',
+    get definition() {
+      return `interface CloseTerminalAction {
+  action: "terminal.close";
+  id: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : 'never'}; // id of the terminal to use
+}`;
+    },
   },
 
   {
@@ -179,14 +214,18 @@ const actions = [
   },
 ];
 
-const actionDefinitions = actions.reduce((acc, action) => {
-  acc.definitions += action.definition + "\n";
-  acc.interfaces.push(action.interface);
-  return acc;
-}, { definitions: '', interfaces: [] });
-export const actionContext = `${actionDefinitions.definitions}
+export const getActionContext = () => {
+  const actionDefinitions = actions.reduce((acc, action) => {
+    acc.definitions += action.definition + "\n";
+    acc.interfaces.push(action.interface);
+    return acc;
+  }, { definitions: '', interfaces: [] });
+  const actionContext = `${actionDefinitions.definitions}
+  
+  type Action = ${actionDefinitions.interfaces.join(' | ')}; `;
 
-type Action = ${actionDefinitions.interfaces.join(' | ')}; `;
+  return actionContext;
+}
 
 export const executeAction = async (action) => {
   const actionHandler = actions.find(a => a.action === action.action);
