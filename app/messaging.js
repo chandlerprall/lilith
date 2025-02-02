@@ -1,6 +1,6 @@
 import { ProxySignal, Signal } from '@venajs/core';
 import project, { clearLog, updateLog } from './project.js';
-import { getActionContext, executeAction } from './actions.js';
+import { getActionNames, getActionDefinitions, executeAction } from './actions.js';
 
 export const isBusy = new Signal(false);
 export const allowAutoRun = new Signal(true);
@@ -34,35 +34,38 @@ ${project.knowledgeBase ?? "no knowledge base set"}
 
 # Messaging
     
-All of the engineer's responses are **only ever** a valid JSON array containing the responses and/or actions to take, with no freeform text outside of the JSON strings. There is no free text before or after the JSON array. The JSON array contains objects with the shape:
+All of the engineer's responses are **only ever** a XML document containing the responses and/or actions to take, making great use of CDATA. There is no text before or after the XML document. The document has the shape:
 
-\`\`\`typescript
-interface SpeakResponse {
-  type: "speak";
-  reason: string; // describe the thought behind or reason for saying this
-  response: string;
-}
-interface ActionResponse {
-  type: "action";
-  reason: string; // describe the thought behind or reason for taking this action
-  action: Action;
-}
+<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+  <!-- enumerate 1+ actions here; protip: unless you have a reason not to, it is often better to take one action at a time, see the response, and proceed -->
+</actions>
 
-${getActionContext()}
+More formally, the document follows this definition:
 
-type Response = Array<SpeakResponse | ActionResponse>;
+\`\`\`dtd
+<!ELEMENT actions (action)+>
+
+<!ELEMENT action (${getActionNames()})>
+<!ATTLIST action
+reason CDATA #REQUIRED <!-- describe why you are taking this action -->
+>
+
+${getActionDefinitions()}
 \`\`\`
 
-SpeakResponse responses are delivered back to the engineer's boss for him to respond, while the results of actions are delivered back to the staff engineer for them to continue on.
+<speak /> content is delivered back to the engineer's boss for him to respond, while the results of actions are delivered back to the staff engineer for them to continue on.
 
-Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue. However, when they appear suck they ask for input, never making something up. They are a self-starter, using the available tools and actions to solve problems and understand hurdles - but check in with their boss periodically to ensure they are on the right track.
-
-Also the engineer does not start the development server, or any other commands that aren't meant to terminate.
+Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue.
+However, when getting stuck in a task they ask for input, never making something up.
+They are a self-starter, using the available tools and actions to solve problems and understand hurdles, iterating to get to the right solution.
 `;
 }
 
 export const messages = new ProxySignal(getInitialMessages());
 messages.push(...project.log);
+
+const parser = new DOMParser();
 
 export const sendMessages = async () => {
   isBusy.value = true;
@@ -97,52 +100,67 @@ export const sendMessages = async () => {
   const persistedMessage = {
     role: message.role,
     content: message.content,
-    extracted: message.content,
     actions: [],
     actionResults: [],
   };
 
-  let actionResults = persistedMessage.actionResults;
-  let speakResults = '';
-  const trimmedMessage = message.content.trim();
-  let actions;
-  try {
-    try {
-      actions = JSON.parse(trimmedMessage);
-    } catch (e) {
-      try {
-        const jsonBlock = trimmedMessage.match(/^```json\n([\s\S]*)\n```$/)[1];
-        actions = JSON.parse(jsonBlock);
-      } catch (_) {
-        throw e;
-      }
-    }
-  } catch (error) {
+  function respondWithError(msg) {
     messages.push(persistedMessage);
     updateLog(persistedMessage);
-    sendMessage(`The JSON array at the end of the message is malformed:\n${error.stack}`);
+    sendMessage(msg);
+  }
+
+  let xmldoc;
+  try {
+    xmldoc = parser.parseFromString(message.content, 'text/xml');
+  } catch (e) {
+    respondWithError(`Error parsing XML: ${e.message}`);
     return;
   }
 
-  for (let i = 0; i < actions.length; i++) {
-    const entry = actions[i];
-    if (entry.type === "speak") {
-      speakResults += actions[i].response + '\n';
-    } else if (entry.type === "action") {
+  // check invariants:
+  // 1. there is a root element named "actions"
+  // 2. in the root element there is at least one action, and no other elements
+  let actionNodes;
+  if (xmldoc.documentElement.nodeName !== 'actions') {
+    respondWithError(`Invalid root element: found ${xmldoc.documentElement.nodeName}, expected "actions"`);
+    return;
+  } else if (xmldoc.documentElement.children.length === 0) {
+    respondWithError('No actions found');
+    return;
+  } else if (xmldoc.documentElement.children.length >= 0) {
+    actionNodes = xmldoc.documentElement.children;
+    // validate each element is an action and it has a reason
+    for (let i = 0; i < actionNodes.length; i++) {
+      if (actionNodes[i].nodeName !== 'action') {
+        respondWithError(`Invalid action element: found ${actionNodes[i].nodeName}, expected "action"`);
+        return;
+      } else if (!actionNodes[i].getAttribute('reason')) {
+        respondWithError(`Invalid action element: missing reason attribute`);
+        return;
+      }
+    }
+  }
+
+  let actions = persistedMessage.actions;
+  let actionResults = persistedMessage.actionResults;
+  let speakResults = '';
+
+  for (let i = 0; i < actionNodes.length; i++) {
+    const actionDef = actionNodeToObject(actionNodes[i]);
+    actions.push(actionDef);
+
+    if (actionDef.action === 'speak') {
+      speakResults += actionDef.text + '\n';
+    } else {
       try {
-        actionResults.push(await executeAction(entry.action));
+        actionResults.push(await executeAction(actionDef));
       } catch (e) {
         console.error(e);
         actionResults.push(`Error: ${e.message}`);
       }
-    } else {
-      actionResults.push(`You have an invalid message type, please use 'speak' or 'action'\n\n${JSON.stringify(entry, null, 2)}`);
     }
   }
-
-  persistedMessage.extracted = speakResults;
-  persistedMessage.actions = actions;
-  persistedMessage.actionResults = actionResults;
 
   messages.push(persistedMessage);
   updateLog(persistedMessage);
@@ -173,19 +191,38 @@ function getInitialMessages() {
   return [
     {
       role: 'system',
-      extracted: '[context]',
-      content: ''
+      content: '[context]'
     },
     {
       role: 'assistant',
-      extracted: 'How can I help today?',
-      content: `[
-    {
-      "type": "speak",
-      "reason": "I want to appear friendly, helpful, and cheerful to my boss. I should greet them and offer my help.",
-      "response": "How can I help today?"
-    }
-  ]`
+      content: `<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+  <action reason="I want to appear helpful and friendly">
+    <speak>How can I help today?</speak>
+  </action>
+</actions>`,
+      actions: [
+        {
+          reason: "I want to provide a helpful response",
+          action: "speak",
+          args: {},
+          text: "How can I help today?"
+        }
+      ],
+      actionResults: []
     }
   ]
+}
+
+function actionNodeToObject(node) {
+  const reason = node.getAttribute('reason');
+  const actionNode = node.children[0];
+  const action = actionNode.nodeName;
+  const text =  actionNode.textContent; // Array.from(actionNode.childNodes).map(node => node.textContent).join('');
+  const args = {};
+  for (let i = 0; i < actionNode.attributes.length; i++) {
+    const attr = actionNode.attributes[i];
+    args[attr.name] = attr.value;
+  }
+  return { reason, action, args, text };
 }

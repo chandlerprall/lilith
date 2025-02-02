@@ -21,7 +21,10 @@ export const startTerminal = async () => {
   process.unref();
 
   process.on('close', () => {
-    closeTerminal(id);
+    // this is called when the terminal is closed
+    // which also happens when we call closeTerminal
+    // so only call closeTerminal if the terminal is still in the list
+    if (terminalProcesses[id]) closeTerminal(id);
   })
 
   process.stdout.on('data', data => {

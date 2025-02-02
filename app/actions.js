@@ -1,6 +1,6 @@
 import { closeIssue, setFileSummary, setKnowledgeBase, writeIssue } from "./project.js";
 import { closePuppeteer, doPuppeteer } from "./puppeteer.js";
-import { executeCommand, startTerminal, terminalProcesses } from "./terminal.js";
+import { executeCommand, startTerminal, terminalProcesses, closeTerminal } from "./terminal.js";
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const { readFileSync, writeFileSync, unlinkSync } = require('fs');
@@ -8,46 +8,50 @@ const execAsync = promisify(exec);
 
 const actions = [
   {
-    action: 'calculator',
+    action: 'speak',
+    handler() {/* handled by project code */ },
+    definition: `<!-- give a response back to the conversation -->
+<!ELEMENT speak (#PCDATA)>`,
+  },
+
+  {
+    action: 'calculate',
     handler({ equation }) {
       return eval(equation);
     },
-    interface: 'CalcuatorAction',
-    definition: `interface CalcuatorAction {
-  action: "calculator";
-  equation: string; // requires javascript syntax (including Math objects)
-}`,
+    definition: `<!-- perform a mathematical calculation -->
+<!ELEMENT calculate EMPTY>
+<!ATTLIST calculate
+  equation CDATA #REQUIRED <!-- uses javascript syntax (including Math objects) -->
+>`,
   },
 
   {
     action: 'nodejs_runcode',
-    async handler({ code }) {
+    async handler(_, code) {
       // escape "code" to be shell-safe
+      debugger;
       code = code.replace(/"/g, '\\"');
 
       // run code in a nodejs shell, capture the stdout + stderr and return it; using execAsync
       const { stdout, stderr } = await execAsync(`node -e "${code}"`);
       return `stdout\n----------\n${stdout}\nstderr\n----------\n${stderr}`;
     },
-    interface: 'NodejsRunCode',
-    definition: `interface NodejsRunCode {
-  action: "nodejs_runcode";
-  code: string; // executed in a nodejs shell, stdout and stderr are returned
-}`
+    definition: `<!-- text in the element body is executed in a nodejs shell, stdout and stderr are returned -->
+<!ELEMENT nodejs_runcode (#PCDATA)>`,
   },
 
   {
     action: "issues.write",
-    async handler({ title, description }) {
+    async handler({ title }, description) {
       const issue = await writeIssue(title, description);
       return `Issue ${issue.id} created for ${issue.name}: ${description}`;
     },
-    interface: 'IssuesWriteAction',
-    definition: `interface IssuesWriteAction {
-  action: "issues.write";
-  title: string; // title of the issue to create or update
-  description: string;
-}`,
+    definition: `<!-- sets the titled issue's description to the element text -->
+<!ELEMENT issues.write (#PCDATA)>
+<!ATTLIST issues.write
+title CDATA #REQUIRED
+>`,
   },
   {
     action: "issues.close",
@@ -55,11 +59,10 @@ const actions = [
       await closeIssue(id);
       return `Issue ${id} closed`;
     },
-    interface: 'IssuesCloseAction',
-    definition: `interface IssuesCloseAction {
-  action: "issues.close";
-  id: string; // id of the issue to close
-}`,
+    definition: `<!ELEMENT issues.close EMPTY>
+<!ATTLIST issues.close
+id CDATA #REQUIRED <!-- id of the issue to close -->
+>`,
   },
 
   {
@@ -67,26 +70,21 @@ const actions = [
     async handler() {
       return startTerminal();
     },
-    interface: 'StartTerminalAction',
-    definition: `interface StartTerminalAction {
-  // opens a new ${process.platform} terminal in the project directory
-  action: "terminal.start";
-}`
+    definition: `<!-- open a new terminal in the project directory -->
+    <!-- **note** this returns the terminal id for use in the other terminal actions, you must wait before using a started temrinal -->
+<!ELEMENT terminal.start EMPTY>`,
   },
   {
     action: 'terminal.run',
-    async handler({ id, command }) {
+    async handler({ id }, command) {
       return await executeCommand(id, command);
     },
-    interface: 'RunTerminalAction',
     get definition() {
-      return `interface RunTerminalAction {
-  // executes a command in the ${process.platform} shell
-  // stdout and stderr are returned
-  action: "terminal.run";
-  id: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : 'never'}; // id of the terminal to use
-  command: string;
-}`;
+      return `<!-- sends input to the terminal's stdin, resulting stdout and stderr are returned -->
+<!ELEMENT terminal.run (#PCDATA)> <!-- element body is used as the command -->
+<!ATTLIST terminal.run
+id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : '[no terminals are open]'} -->
+>`;
     },
   },
   {
@@ -99,16 +97,13 @@ const actions = [
       const { output } = terminalWindow;
       return lineCount ? output.value.split('\n').slice(-lineCount).join('\n') : output.value;
     },
-    interface: 'ReadTerminalAction',
     get definition() {
-      return `interface ReadTerminalAction {
-  // executes a command in the ${process.platform} shell
-  // stdout and stderr are returned
-  // cwd defaults to project directory
-  action: "terminal.read";
-  id: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : 'never'}; // id of the terminal to use
-  lineCount?: number; // number of lines to limit read to
-}`;
+      return `<!-- read output from the terminal -->
+<!ELEMENT terminal.read EMPTY>
+<!ATTLIST terminal.read
+id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : '[no terminals are open]'} -->
+lineCount CDATA #IMPLIED <!-- number of lines to limit read to, if omitted all lines are read -->
+>`;
     },
   },
   {
@@ -117,56 +112,52 @@ const actions = [
       closeTerminal(id);
       return "terminal has been closed";
     },
-    interface: 'CloseTerminalAction',
     get definition() {
-      return `interface CloseTerminalAction {
-  action: "terminal.close";
-  id: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : 'never'}; // id of the terminal to use
-}`;
+      return `<!-- close the terminal -->
+<!ELEMENT terminal.close EMPTY>
+<!ATTLIST terminal.close
+id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : '[no terminals are open]'} -->
+>`;
     },
   },
 
   {
     action: 'knowledgebase.write',
-    async handler({ content }) {
+    async handler(_, content) {
       setKnowledgeBase(content);
       return `Knowledgebase written`;
     },
-    interface: 'WriteKnowledgeBaseAction',
-    definition: `interface WriteKnowledgeBaseAction {
-      action: "knowledgebase.write";
-      // use the knowledge base to store information that is useful for anyone working on the project
-      // it is useful to continually update this with new information as it is discovered or produced
-      // we encourage markdown formatting
-      content: string;
-}`
+    definition: `<!-- write to the knowledge base -->
+<! -- use the knowledge base to store information that is useful for anyone working on the project
+    it is useful to continually update this with new information as it is discovered or produced
+    we encourage markdown formatting -->
+<!ELEMENT knowledgebase.write (#PCDATA)> <!-- element body is used as the new knowledgebase -->`,
   },
 
   {
     action: 'file.write',
-    async handler({ path, summary, content }) {
+    async handler({ path, summary }, content) {
       writeFileSync(path, content);
       setFileSummary(path, summary);
       return `File written to ${path}`;
     },
-    interface: 'FileWriteAction',
-    definition: `interface FileWriteAction {
-      action: "file.write";
-      path: string;
-      summary: string; // short summary of the whole file (**NOT A CHANGE DESCRIPTION**), is saved in the project description for future reference
-      content: string; // file contents
-}`
+    definition: `<!-- write to a file -->
+<!ELEMENT file.write (#PCDATA)> <!-- element body is written as the file contents -->
+<!ATTLIST file.write
+path CDATA #REQUIRED <!-- file path -->
+summary CDATA #REQUIRED <!-- short summary of the whole file -->
+>`,
   },
   {
     action: 'file.read',
     async handler({ path }) {
       return readFileSync(path, 'utf8');
     },
-    interface: 'FileReadAction',
-    definition: `interface FileReadAction {
-      action: "file.read";
-      path: string;
-}`
+    definition: `<!-- read a file -->
+<!ELEMENT file.read EMPTY>
+<!ATTLIST file.read
+path CDATA #REQUIRED
+>`,
   },
   {
     action: 'file.delete',
@@ -174,31 +165,28 @@ const actions = [
       unlinkSync(path);
       return `File deleted at ${path}`;
     },
-    interface: 'FileDeleteAction',
-    definition: `interface FileDeleteAction {
-      action: "file.delete";
-      path: string; // file OR DIRECTORY to unlink
-}`
+    definition: `<!-- delete a file or directory -->
+<!ELEMENT file.delete EMPTY>
+<!ATTLIST file.delete
+path CDATA #REQUIRED
+>`,
   },
 
   {
     action: 'puppeteer.run',
-    async handler({ code }) {
+    async handler(_, code) {
       return await doPuppeteer({ code });
     },
-    interface: 'PuppeteerAction',
-    definition: `interface PuppeteerAction {
-      // opens or resumes a persistant browser instance
-      // executes in nodejs context where \`browser\` and \`page\` are already available
-      // return the data you want to capture at the end, e.g.
-      //   return await page.evaluate(() => document.title);
-      //     to verify the page title
-      // or
-      //   return await page.content();
-      //     to get the html contents of the page
-      action: "puppeteer.run";
-      code: string;
-}`
+    definition: `<!-- run puppeteer code -->
+<!--  opens or resumes a persistant browser instance
+    executes in nodejs context where \`browser\` and \`page\` are already available
+    return the data you want to capture at the end, e.g.
+      return await page.evaluate(() => document.title);
+      to verify the page title
+    or
+      return await page.content();
+        to get the html contents of the page -->
+<!ELEMENT puppeteer.run (#PCDATA)> <!-- element body is executed in puppeteer -->`,
   },
   {
     action: 'puppeteer.close',
@@ -206,31 +194,26 @@ const actions = [
       await closePuppeteer();
       return "Puppeteer session closed";
     },
-    interface: 'ClosePuppeteerAction',
-    definition: `interface ClosePuppeteerAction {
-      // destroys the persistant browser instance
-      action: "puppeteer.close";
-}`
+    definition: `<!-- close puppeteer session -->
+<!ELEMENT puppeteer.close EMPTY>`,
   },
 ];
 
-export const getActionContext = () => {
-  const actionDefinitions = actions.reduce((acc, action) => {
-    acc.definitions += action.definition + "\n";
-    acc.interfaces.push(action.interface);
-    return acc;
-  }, { definitions: '', interfaces: [] });
-  const actionContext = `${actionDefinitions.definitions}
-  
-  type Action = ${actionDefinitions.interfaces.join(' | ')}; `;
-
-  return actionContext;
+export const getActionNames = () => {
+  return actions.map(action => action.action).join(' | ');
 }
 
-export const executeAction = async (action) => {
-  const actionHandler = actions.find(a => a.action === action.action);
+export const getActionDefinitions = () => {
+  return actions.reduce((acc, action) => {
+    acc += action.definition + "\n\n";
+    return acc;
+  }, '');
+}
+
+export const executeAction = async ({ action: actionName, args, text }) => {
+  const actionHandler = actions.find(a => a.action === actionName)?.handler;
   if (!actionHandler) {
-    throw new Error(`No handler found for action type ${action.action}`);
+    throw new Error(`No handler found for action type ${actionName}`);
   }
-  return await actionHandler.handler(action);
+  return await actionHandler(args, text);
 }
