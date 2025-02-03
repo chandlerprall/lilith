@@ -233,15 +233,30 @@ path CDATA #REQUIRED
       return await doPuppeteer({ code });
     },
     definition: `<!-- run puppeteer code -->
-<!--  opens or resumes a persistant browser instance
+<!--
+    opens or resumes a persistant browser instance
     executes in nodejs context where \`browser\` and \`page\` are already available
     return the data you want to capture at the end, e.g.
       return await page.evaluate(() => document.title);
       to verify the page title
     or
       return await page.content();
-        to get the html contents of the page -->
+        to get the html contents of the page
+
+    NOTE: it is important to use page.evaluate to execute code in the browser context when intended
+-->
 <!ELEMENT puppeteer.run (#PCDATA)> <!-- element body is executed in puppeteer -->`,
+  },
+  {
+    action: 'puppeteer.execute',
+    async handler(_, code) {
+      return await doPuppeteer({
+        code: `return await page.evaluate(() => {
+  ${code}
+})` });
+    },
+    definition: `<!-- execute javascript code in context of current puppeteer page -->
+<!ELEMENT puppeteer.execute (#PCDATA)>`,
   },
   {
     action: 'puppeteer.close',
@@ -272,3 +287,5 @@ export const executeAction = async ({ action: actionName, args, text }) => {
   }
   return await actionHandler(args, text);
 }
+
+window.doPuppeteer = doPuppeteer;
