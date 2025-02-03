@@ -1,4 +1,4 @@
-import { closeIssue, setFileSummary, setKnowledgeBase, writeIssue } from "./project.js";
+import { closeIssue, setKnowledgeBase, writeIssue } from "./project.js";
 import { closePuppeteer, doPuppeteer } from "./puppeteer.js";
 import { executeCommand, startTerminal, terminalProcesses, closeTerminal } from "./terminal.js";
 const { exec } = require('child_process');
@@ -30,7 +30,6 @@ const actions = [
     action: 'nodejs_runcode',
     async handler(_, code) {
       // escape "code" to be shell-safe
-      debugger;
       code = code.replace(/"/g, '\\"');
 
       // run code in a nodejs shell, capture the stdout + stderr and return it; using execAsync
@@ -136,27 +135,83 @@ id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProce
 
   {
     action: 'file.write',
-    async handler({ path, summary }, content) {
-      writeFileSync(path, content);
-      setFileSummary(path, summary);
-      return `File written to ${path}`;
+    async handler({ path, startLine, endLine }, content) {
+      // handle undefined & string values in startLine and endLine
+      startLine = startLine ? parseInt(startLine, 10) : undefined;
+      endLine = endLine ? parseInt(endLine, 10) : undefined;
+      if (startLine != null || endLine != null) {
+        const fileContents = readFileSync(path, 'utf8').split('\n');
+        if (startLine != null) {
+          startLine = Math.max(1, Math.min(startLine, fileContents.length));
+        } else {
+          startLine = 1;
+        }
+
+        if (endLine != null) {
+          endLine = Math.max(startLine, Math.min(endLine, fileContents.length));
+        } else {
+          endLine = fileContents.length;
+        }
+
+        const newContents = [...fileContents.slice(0, startLine - 1), ...content.split('\n'), ...fileContents.slice(endLine)];
+        writeFileSync(path, newContents.join('\n'));
+
+        // communicate the result, including the lines that were replaced +/- 5 lines on each side
+        const start = Math.max(0, startLine - 6);
+        const end = Math.min(fileContents.length, endLine + 5);
+        return `File written to ${path}\n\n${fileContents.slice(start, end).join('\n')}`;
+      } else {
+        writeFileSync(path, content);
+        return `File written to ${path}`;
+      }
     },
     definition: `<!-- write to a file -->
 <!ELEMENT file.write (#PCDATA)> <!-- element body is written as the file contents -->
 <!ATTLIST file.write
-path CDATA #REQUIRED <!-- file path -->
-summary CDATA #REQUIRED <!-- short summary of the whole file -->
->`,
+path CDATA #REQUIRED
+startLine CDATA #IMPLIED <!-- line number to start writing at, inclusive; NOTE line count starts at 1 -->
+endLine CDATA #IMPLIED <!-- line number to stop writing, inclusive -->
+>
+<!--
+  Without startLine or endLine, the element body represents the entire file contents. When either startLine and/or endLine are specified,
+  the file is read and the element body is used to replace lines in the file using the following rules. Omitting either startLine or endLine defaults them to the start and end of the document, respectively
+  
+  Some examples:
+  - <file.write path="/path/to/file.txt"">foo</file.write>
+    writes the entire file with the single line "foo"
+  - <file.write path="/path/to/file.txt" startLine="1" endLine="3">foo</file.write>
+    writes lines 1-3 with the single line "foo"
+  - <file.write path="/path/to/file.txt" startLine="5">
+      foo
+      bar
+    </file.write>
+    replaces lines 5-[end] with the lines "foo" and "bar"
+  - <file.write path="/path/to/file.txt" endLine="10">
+      foo
+      bar
+    </file.write>
+    writes lines [start]-10 with the lines "foo" and "bar"
+
+  NOTE if either startLine or endLine are out of range they are aligned to the start and end lines of the file, no error or other message is given
+-->`,
   },
   {
     action: 'file.read',
-    async handler({ path }) {
-      return readFileSync(path, 'utf8');
+    async handler({ path, includeLineNumbers = "false" }) {
+      let contents = readFileSync(path, 'utf8');
+      if (includeLineNumbers === "true") {
+        // line numbers should be left-padding
+        const lines = contents.split('\n');
+        const maxLineNumberLength = lines.length.toString().length;
+        contents = lines.map((line, idx) => `${(idx + 1).toString().padStart(maxLineNumberLength, ' ')}: ${line}`).join('\n');
+      }
+      return contents;
     },
     definition: `<!-- read a file -->
 <!ELEMENT file.read EMPTY>
 <!ATTLIST file.read
 path CDATA #REQUIRED
+includeLineNumbers (true | false) "false" <!-- whether to include line numbers in the response, useful when performing edits -->
 >`,
   },
   {

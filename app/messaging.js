@@ -24,17 +24,13 @@ ${project.context}
 
 ${project.issues.value.map(({ id, name, closed }) => `* (${id}) ${name}${closed ? ' (closed)' : ' (open)'}`).join('\n')}
 
-## File summaries
-
-${Object.keys(project.fileSummaries).length === 0 ? "no files summarized" : Object.entries(project.fileSummaries).map(([path, summary]) => `* ${path}: ${summary}`).join('\n')}
-
 ## Knowledge base
 
 ${project.knowledgeBase ?? "no knowledge base set"}
 
 # Messaging
     
-All of the engineer's responses are **only ever** a XML document containing the responses and/or actions to take, making great use of CDATA. There is no text before or after the XML document. The document has the shape:
+All of the engineer's responses are **only ever** a XML document containing the responses and/or action (occasionally multiple actions) to take, making great use of CDATA. There is no text before or after the XML document. The document has the shape:
 
 <?xml version="1.0" encoding="UTF-8"?>
 <actions>
@@ -54,7 +50,7 @@ reason CDATA #REQUIRED <!-- describe why you are taking this action -->
 ${getActionDefinitions()}
 \`\`\`
 
-<speak /> content is delivered back to the engineer's boss for him to respond, while the results of actions are delivered back to the staff engineer for them to continue on.
+<speak /> content is delivered back to the engineer's boss for him to respond, while the results of any action(s) are delivered back to the staff engineer for them to continue on.
 
 Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue.
 However, when getting stuck in a task they ask for input, never making something up.
@@ -218,7 +214,7 @@ function actionNodeToObject(node) {
   const reason = node.getAttribute('reason');
   const actionNode = node.children[0];
   const action = actionNode.nodeName;
-  const text =  actionNode.textContent; // Array.from(actionNode.childNodes).map(node => node.textContent).join('');
+  const text = actionNode.textContent; // Array.from(actionNode.childNodes).map(node => node.textContent).join('');
   const args = {};
   for (let i = 0; i < actionNode.attributes.length; i++) {
     const attr = actionNode.attributes[i];
