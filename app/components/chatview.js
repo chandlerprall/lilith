@@ -66,8 +66,8 @@ registerComponent('l-chatview', ({ render, refs }) => {
     </h2>
     <div id="messages">
       ${messages.map(messages => {
-      return messages.map((message) => {
-        return element`<l-message message=${message}></l-message>`;
+      return messages.map((message, idx) => {
+        return element`<l-message message=${message} isContext=${idx === 0}></l-message>`;
       })
     })}
     </div>

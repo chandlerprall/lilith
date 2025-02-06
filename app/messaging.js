@@ -76,7 +76,7 @@ export const sendMessages = async () => {
         mode: "instruct",
         messages: messages.value,
         max_tokens: 4096,
-        temperature: 0,
+        temperature: 0.6,
         top_p: 1,
         top_k: 1,
         typical_p: 1,
@@ -98,6 +98,7 @@ export const sendMessages = async () => {
     content: message.content,
     actions: [],
     actionResults: [],
+    think: '',
   };
 
   function respondWithError(msg) {
@@ -106,9 +107,28 @@ export const sendMessages = async () => {
     sendMessage(msg);
   }
 
+  // match two groups: think and xml
+  // think is everything before the xml declaration
+  const regexResult = message.content.match(/(?<think>.*?)(```xml[\r\n+](?<xml>.+)[\r\n+]```|xml(?<xml>.+))$/s);
+  try {
+    if (!regexResult) {
+      respondWithError('Invalid response format, could not find xml declaraction');
+      return;
+    }
+
+    // invariant
+    regexResult.groups.think.length;
+    regexResult.groups.xml.length;
+  } catch (e) {
+    respondWithError(`Invalid response format: ${e.message}`);
+    return;
+  }
+  const { think, xml } = regexResult.groups;
+  persistedMessage.think = think;
+
   let xmldoc;
   try {
-    xmldoc = parser.parseFromString(message.content, 'text/xml');
+    xmldoc = parser.parseFromString(xml, 'text/xml');
   } catch (e) {
     respondWithError(`Error parsing XML: ${e.message}`);
     return;
@@ -186,13 +206,15 @@ export const resetMessages = () => {
 function getInitialMessages() {
   return [
     {
-      role: 'system',
-      content: '[context]'
+      role: 'user',
+      content: '[context]',
+      isContext: true,
     },
     {
       role: 'assistant',
-      content: `<?xml version="1.0" encoding="UTF-8"?>
-<action reason="Normally I would look back at the previous messages and reasons, determine the necessary action here, and anticipate future ones. However, this is the beginning of the conversation and there is no history to look at. I want to appear helpful and friendly, so I'll just ask how I can help.">
+      content: `<think>Normally I would look back at the previous messages and reasons, determine the necessary action here, and anticipate future ones. However, this is the beginning of the conversation and there is no history to look at. I want to appear helpful and friendly, so I'll just ask how I can help.</think>
+<?xml version="1.0" encoding="UTF-8"?>
+<action reason="I should be friendly and helpful">
   <speak>How can I help today?</speak>
 </action>`,
       actions: [

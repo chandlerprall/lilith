@@ -47,36 +47,63 @@ registerComponent('l-message', ({ render, attributes }) => {
        .reason {
          color: #999;
        }
+
+      .think {
+        display: block;
+        color: #999;
+        font-style: italic;
+        
+        cursor: pointer;
+        max-height: 1.5em;
+        overflow: hidden;
+        background: linear-gradient(to right, rgba(255, 255, 255, 0), rgba(255, 255, 255, 1));
+        background-clip: text;
+        -webkit-background-clip: text;
+
+        &[data-open] {
+          max-height: unset;
+          overflow: visible;
+        }
+      }
     </style>
 
-    ${message.map(({ role, content, actions, actionResults }) => {
-      if (role === 'user' && content.startsWith('action results\n----------\n')) {
-        return "";
-      }
+    ${message.map(({ role, think, content, actions, actionResults, isContext }) => {
+    if (isContext) {
+      return element`<section>
+          <strong>[context]</strong>
+        </section>`;
+    }
 
-      if (role === 'user') {
-        return element`<section>
-        <strong onclick=${() => debugging.value = !debugging.value}>${role}</strong>
+    if (role === 'user' && content.startsWith('action results\n----------\n')) {
+      return "";
+    }
+
+    if (role === 'user') {
+      return element`<section>
+          <strong onclick=${() => debugging.value = !debugging.value}>${role}</strong>
           <pre class="lineWrap">${sanitize(content)}</pre>
         </section>`;
-      }
-      
-      return element`
+    }
+
+    const isThinkExpanded = new Signal(false);
+
+    return element`
           <section>
             <strong onclick=${() => debugging.value = !debugging.value}>${role}</strong>
-            ${Signal.from(message, debugging).map(() => {
-              if (debugging.value) {
-                return element`<pre>${sanitize(content)}</pre>`;
-              }
+            ${Signal.from(message, debugging, isThinkExpanded).map(() => {
+      if (debugging.value) {
+        return element`<pre>${sanitize(content)}</pre>`;
+      }
 
-              const spokenWords = actions?.filter(action => action.action === 'speak').map(action => action.text).join('\n');
-              const remainingActions = actions?.filter(action => action.action !== 'speak');
+      const spokenWords = actions?.filter(action => action.action === 'speak').map(action => action.text).join('\n');
+      const remainingActions = actions?.filter(action => action.action !== 'speak');
 
-              return element`<div>
+      return element`<div>
+                <pre class="think" data-open=${isThinkExpanded} onclick=${() => isThinkExpanded.value = !isThinkExpanded.value}>${sanitize(think)}</pre>
                 <pre class="lineWrap">${sanitize(spokenWords)}</pre>
                 ${remainingActions?.map(({ reason, action, args }, idx) => {
-                const isExpanded = new Signal(false);
-                return element`
+        const isExpanded = new Signal(false);
+        return element`
                   <div>
                     <div class="actionBlock">
                       <div class="action" onclick=${() => isExpanded.value = !isExpanded.value}>
@@ -89,11 +116,11 @@ registerComponent('l-message', ({ render, attributes }) => {
                     ${isExpanded.map(isExpanded => isExpanded ? element`<pre>${sanitize(JSON.stringify(args, null, 2))}\n\n${sanitize(actionResults[idx])}</pre>` : "")}
                   </div>
                 `;
-              })}
+      })}
             </div>`;
-            })}
+    })}
           </section>
         `;
-    })}
+  })}
   `;
 });
