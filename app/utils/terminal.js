@@ -1,6 +1,6 @@
 import { Signal } from '@venajs/core';
-import project from './project.js';
-import { getId } from './utils/id.js';
+import project from '../project.js';
+import { getId } from './id.js';
 
 const { spawn, execSync } = require('child_process');
 

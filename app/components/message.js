@@ -24,6 +24,10 @@ registerComponent('l-message', ({ render, attributes }) => {
         font-size: 12px;
       }
 
+      .lineWrap {
+        white-space: pre-wrap;
+      }
+
       .actionBlock {
         display: flex;
         flex-direction: row;
@@ -53,7 +57,7 @@ registerComponent('l-message', ({ render, attributes }) => {
       if (role === 'user') {
         return element`<section>
         <strong onclick=${() => debugging.value = !debugging.value}>${role}</strong>
-          <pre>${sanitize(content)}</pre>
+          <pre class="lineWrap">${sanitize(content)}</pre>
         </section>`;
       }
       
@@ -69,7 +73,7 @@ registerComponent('l-message', ({ render, attributes }) => {
               const remainingActions = actions?.filter(action => action.action !== 'speak');
 
               return element`<div>
-                <pre>${sanitize(spokenWords)}</pre>
+                <pre class="lineWrap">${sanitize(spokenWords)}</pre>
                 ${remainingActions?.map(({ reason, action, args }, idx) => {
                 const isExpanded = new Signal(false);
                 return element`

@@ -1,10 +1,17 @@
 import { closeIssue, setKnowledgeBase, writeIssue } from "./project.js";
-import { closePuppeteer, doPuppeteer } from "./puppeteer.js";
-import { executeCommand, startTerminal, terminalProcesses, closeTerminal } from "./terminal.js";
+import { browserSessions, closePageSession, navigateTo, startPageSession } from "./utils/browser.js";
+import { executeCommand, startTerminal, terminalProcesses, closeTerminal } from "./utils/terminal.js";
+const TurndownService = require("turndown");
+const os = require('os');
+const path = require('path');
 const { exec } = require('child_process');
 const { promisify } = require('util');
 const { readFileSync, writeFileSync, unlinkSync } = require('fs');
 const execAsync = promisify(exec);
+
+function keysOfOr(obj, or) {
+  return Object.keys(obj).length > 0 ? Object.keys(obj).join(', ') : or;
+}
 
 const actions = [
   {
@@ -29,11 +36,9 @@ const actions = [
   {
     action: 'nodejs_runcode',
     async handler(_, code) {
-      // escape "code" to be shell-safe
-      code = code.replace(/"/g, '\\"');
-
-      // run code in a nodejs shell, capture the stdout + stderr and return it; using execAsync
-      const { stdout, stderr } = await execAsync(`node -e "${code}"`);
+      const tmpFile = path.join(os.tmpdir(), '__lilith.js');
+      writeFileSync(tmpFile, code);
+      const { stdout, stderr } = await execAsync(`node ${tmpFile}`);
       return `stdout\n----------\n${stdout}\nstderr\n----------\n${stderr}`;
     },
     definition: `<!-- text in the element body is executed in a nodejs shell, stdout and stderr are returned -->
@@ -82,7 +87,7 @@ id CDATA #REQUIRED <!-- id of the issue to close -->
       return `<!-- sends input to the terminal's stdin, resulting stdout and stderr are returned -->
 <!ELEMENT terminal.run (#PCDATA)> <!-- element body is used as the command -->
 <!ATTLIST terminal.run
-id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : '[no terminals are open]'} -->
+id CDATA #REQUIRED <!-- id of the terminal, options: ${keysOfOr(terminalProcesses, '[no terminals are open]')} -->
 >`;
     },
   },
@@ -97,10 +102,9 @@ id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProce
       return lineCount ? output.value.split('\n').slice(-lineCount).join('\n') : output.value;
     },
     get definition() {
-      return `<!-- read output from the terminal -->
-<!ELEMENT terminal.read EMPTY>
+      return `<!ELEMENT terminal.read EMPTY>
 <!ATTLIST terminal.read
-id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : '[no terminals are open]'} -->
+id CDATA #REQUIRED <!-- id of the terminal, options: ${keysOfOr(terminalProcesses, '[no terminals are open]')} -->
 lineCount CDATA #IMPLIED <!-- number of lines to limit read to, if omitted all lines are read -->
 >`;
     },
@@ -112,10 +116,9 @@ lineCount CDATA #IMPLIED <!-- number of lines to limit read to, if omitted all l
       return "terminal has been closed";
     },
     get definition() {
-      return `<!-- close the terminal -->
-<!ELEMENT terminal.close EMPTY>
+      return `<!ELEMENT terminal.close EMPTY>
 <!ATTLIST terminal.close
-id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProcesses).join(', ') ? Object.keys(terminalProcesses).join(', ') : '[no terminals are open]'} -->
+id CDATA #REQUIRED <!-- id of the terminal, options: ${keysOfOr(terminalProcesses, '[no terminals are open]')} -->
 >`;
     },
   },
@@ -126,8 +129,7 @@ id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProce
       setKnowledgeBase(content);
       return `Knowledgebase written`;
     },
-    definition: `<!-- write to the knowledge base -->
-<! -- use the knowledge base to store information that is useful for anyone working on the project
+    definition: `<! -- use the knowledge base to store information that is useful for anyone working on the project
     it is useful to continually update this with new information as it is discovered or produced
     we encourage markdown formatting -->
 <!ELEMENT knowledgebase.write (#PCDATA)> <!-- element body is used as the new knowledgebase -->`,
@@ -165,8 +167,7 @@ id CDATA #REQUIRED <!-- id of the terminal, options: ${Object.keys(terminalProce
         return `File written to ${path}`;
       }
     },
-    definition: `<!-- write to a file -->
-<!ELEMENT file.write (#PCDATA)> <!-- element body is written as the file contents -->
+    definition: `<!ELEMENT file.write (#PCDATA)> <!-- element body is written as the file contents -->
 <!ATTLIST file.write
 path CDATA #REQUIRED
 startLine CDATA #IMPLIED <!-- line number to start writing at, inclusive; NOTE line count starts at 1 -->
@@ -207,10 +208,9 @@ endLine CDATA #IMPLIED <!-- line number to stop writing, inclusive -->
       }
       return contents;
     },
-    definition: `<!-- read a file -->
-<!ELEMENT file.read EMPTY>
+    definition: `<!ELEMENT file.read EMPTY>
 <!ATTLIST file.read
-path CDATA #REQUIRED
+path CDATA #REQUIRED <!-- absolute path to the file -->
 includeLineNumbers (true | false) "false" <!-- whether to include line numbers in the response, useful when performing edits -->
 >`,
   },
@@ -223,49 +223,79 @@ includeLineNumbers (true | false) "false" <!-- whether to include line numbers i
     definition: `<!-- delete a file or directory -->
 <!ELEMENT file.delete EMPTY>
 <!ATTLIST file.delete
-path CDATA #REQUIRED
+path CDATA #REQUIRED <!-- absolute path to the file -->
 >`,
   },
 
   {
-    action: 'puppeteer.run',
-    async handler(_, code) {
-      return await doPuppeteer({ code });
-    },
-    definition: `<!-- run puppeteer code -->
-<!--
-    opens or resumes a persistant browser instance
-    executes in nodejs context where \`browser\` and \`page\` are already available
-    return the data you want to capture at the end, e.g.
-      return await page.evaluate(() => document.title);
-      to verify the page title
-    or
-      return await page.content();
-        to get the html contents of the page
-
-    NOTE: it is important to use page.evaluate to execute code in the browser context when intended
--->
-<!ELEMENT puppeteer.run (#PCDATA)> <!-- element body is executed in puppeteer -->`,
-  },
-  {
-    action: 'puppeteer.execute',
-    async handler(_, code) {
-      return await doPuppeteer({
-        code: `return await page.evaluate(() => {
-  ${code}
-})` });
-    },
-    definition: `<!-- execute javascript code in context of current puppeteer page -->
-<!ELEMENT puppeteer.execute (#PCDATA)>`,
-  },
-  {
-    action: 'puppeteer.close',
+    action: 'browser.open',
     async handler() {
-      await closePuppeteer();
-      return "Puppeteer session closed";
+      return await startPageSession();
     },
-    definition: `<!-- close puppeteer session -->
-<!ELEMENT puppeteer.close EMPTY>`,
+    definition: `<!-- **note** this returns the session id for use in the other browser actions, you must wait before using an opened browser -->
+<!ELEMENT browser.open EMPTY>`,
+  },
+  {
+    action: 'browser.navigate',
+    async handler({ id, url }) {
+      return await navigateTo(id, url);
+    },
+    definition: `<!ELEMENT browser.navigate (EMPTY)>
+<!ATTLIST browser.navigate
+  id CDATA #REQUIRED <!-- id of the browser session, options: ${keysOfOr(browserSessions, '[no browsers are open]')} -->
+  url CDATA #REQUIRED <!-- url to navigate to -->
+>`,
+  },
+  {
+    action: 'browser.read',
+    async handler({ id, format }) {
+      const page = browserSessions[id];
+      if (!page) {
+        throw new Error(`Browser session ${id} not found`);
+      }
+      if (format === "html") {
+        return await page.content();
+      } else if (format === "text") {
+        return await page.evaluate(() => document.body.innerText);
+      } else if (format === "markdown") {
+        const turndownService = new TurndownService()
+        return turndownService.turndown(await page.content());
+      } else {
+        throw new Error(`Unknown format ${format}`);
+      }
+    },
+    definition: `<!ELEMENT browser.read EMPTY>
+<!ATTLIST browser.read
+  id CDATA #REQUIRED <!-- id of the browser session, options: ${keysOfOr(browserSessions, '[no browsers are open]')} -->
+  format (html | text | markdown) "markdown" <!-- format to read the page in -->
+>`,
+  },
+  {
+    action: 'browser.execute',
+    async handler({ id, waitMsAfter }, code) {
+      if (waitMsAfter) {
+        waitMsAfter = parseInt(waitMsAfter, 10);
+      }
+      return await executeInPage(id, waitMsAfter, code);
+    },
+    definition: `<!-- function body to execute javascript in the page (it is wrapped in an async function so await usage is safe) -->
+<!ELEMENT browser.execute (#PCDATA)> <!-- any value from \`return\` is reported back -->
+<!ATTLIST browser.execute
+  id CDATA #REQUIRED <!-- id of the browser session, options: ${keysOfOr(browserSessions, '[no browsers are open]')} -->
+  waitMsAfter CDATA #IMPLIED <!-- if present, the number of milliseconds to wait after the code is excuted, before returning -->
+>`,
+  },
+  {
+    action: 'browser.close',
+    async handler({ id }) {
+      return await closePageSession(id);
+    },
+    definition: `<!-- close browser session -->
+<!ELEMENT browser.close EMPTY>
+<!ATTLIST browser.close
+  id CDATA #REQUIRED <!-- id of the browser session, options: ${keysOfOr(browserSessions, '[no browsers are open]')} -->
+>
+`,
   },
 ];
 
@@ -287,5 +317,3 @@ export const executeAction = async ({ action: actionName, args, text }) => {
   }
   return await actionHandler(args, text);
 }
-
-window.doPuppeteer = doPuppeteer;

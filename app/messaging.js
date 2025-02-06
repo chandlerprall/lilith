@@ -30,18 +30,18 @@ ${project.knowledgeBase ?? "no knowledge base set"}
 
 # Messaging
     
-All of the engineer's responses are **only ever** a XML document containing the responses and/or action (occasionally multiple actions) to take, making great use of CDATA. There is no text before or after the XML document. The document has the shape:
+All of the engineer's responses are **only ever** a XML document containing the singular action to take, making great use of CDATA. There is no text before or after the XML document. An example document is:
 
+\`\`\`document
 <?xml version="1.0" encoding="UTF-8"?>
-<actions>
-  <!-- enumerate 1+ actions here; protip: unless you have a reason not to, it is often better to take one action at a time, see the response, and proceed -->
-</actions>
+<action reason="I want to say hi">
+  <speak><![CDATA[my message]]></speak>
+</action>
+\`\`\`
 
 More formally, the document follows this definition:
 
 \`\`\`dtd
-<!ELEMENT actions (action)+>
-
 <!ELEMENT action (${getActionNames()})>
 <!ATTLIST action
 reason CDATA #REQUIRED <!-- describe why you are taking this action -->
@@ -50,7 +50,7 @@ reason CDATA #REQUIRED <!-- describe why you are taking this action -->
 ${getActionDefinitions()}
 \`\`\`
 
-<speak /> content is delivered back to the engineer's boss for him to respond, while the results of any action(s) are delivered back to the staff engineer for them to continue on.
+<speak /> content is delivered back to the engineer's boss for him to respond, while the results of any action(s) are delivered back to the staff engineer for them to continue on. Also note how there is always exactly one child element of <action />.
 
 Notice how intelligent and concise the staff eng is, applying their wealth of experience and insight to deal with any issue.
 However, when getting stuck in a task they ask for input, never making something up.
@@ -76,7 +76,7 @@ export const sendMessages = async () => {
         mode: "instruct",
         messages: messages.value,
         max_tokens: 4096,
-        temperature: 0.0,
+        temperature: 0,
         top_p: 1,
         top_k: 1,
         typical_p: 1,
@@ -115,38 +115,35 @@ export const sendMessages = async () => {
   }
 
   // check invariants:
-  // 1. there is a root element named "actions"
-  // 2. in the root element there is at least one action, and no other elements
-  let actionNodes;
-  if (xmldoc.documentElement.nodeName !== 'actions') {
-    respondWithError(`Invalid root element: found ${xmldoc.documentElement.nodeName}, expected "actions"`);
+  // 1. there is a root element named "action"
+  // 2. it has a reason attribute
+  if (xmldoc.documentElement.nodeName !== 'action') {
+    respondWithError(`Invalid root element: found ${xmldoc.documentElement.nodeName}, expected "action"`);
     return;
-  } else if (xmldoc.documentElement.children.length === 0) {
-    respondWithError('No actions found');
+  } else if (!xmldoc.documentElement.hasAttribute('reason')) {
+    respondWithError(`Missing reason attribute on root element`);
     return;
-  } else if (xmldoc.documentElement.children.length >= 0) {
-    actionNodes = xmldoc.documentElement.children;
-    // validate each element is an action and it has a reason
-    for (let i = 0; i < actionNodes.length; i++) {
-      if (actionNodes[i].nodeName !== 'action') {
-        respondWithError(`Invalid action element: found ${actionNodes[i].nodeName}, expected "action"`);
-        return;
-      } else if (!actionNodes[i].getAttribute('reason')) {
-        respondWithError(`Invalid action element: missing reason attribute`);
-        return;
-      }
-    }
   }
+
+  const actionNodes = [xmldoc.documentElement];
 
   let actions = persistedMessage.actions;
   let actionResults = persistedMessage.actionResults;
   let speakResults = '';
 
+  if (actionNodes[0].children.length > 1) {
+    respondWithError('Multiple elements found inside <action />, only one item is allowed at a time');
+    return;
+  }
+
   for (let i = 0; i < actionNodes.length; i++) {
     const actionDef = actionNodeToObject(actionNodes[i]);
     actions.push(actionDef);
 
-    if (actionDef.action === 'speak') {
+    if (actionDef.action === 'parseerror') {
+      respondWithError(xmldoc.documentElement.textContent);
+      return;
+    } else if (actionDef.action === 'speak') {
       speakResults += actionDef.text + '\n';
     } else {
       try {
@@ -164,14 +161,17 @@ export const sendMessages = async () => {
 
   if (actionResults.length) {
     sendMessage(`action results\n----------\n${actionResults.join('\n----------\n')}`);
-    return;
+  } else {
+    sendMessage();
   }
 }
 
 export const sendMessage = async content => {
-  const message = { role: 'user', content };
-  updateLog(message);
-  messages.push(message);
+  if (content) {
+    const message = { role: 'user', content };
+    updateLog(message);
+    messages.push(message);
+  }
   if (allowAutoRun.value) {
     sendMessages();
   }
@@ -192,11 +192,9 @@ function getInitialMessages() {
     {
       role: 'assistant',
       content: `<?xml version="1.0" encoding="UTF-8"?>
-<actions>
-  <action reason="I want to appear helpful and friendly">
-    <speak>How can I help today?</speak>
-  </action>
-</actions>`,
+<action reason="Normally I would look back at the previous messages and reasons, determine the necessary action here, and anticipate future ones. However, this is the beginning of the conversation and there is no history to look at. I want to appear helpful and friendly, so I'll just ask how I can help.">
+  <speak>How can I help today?</speak>
+</action>`,
       actions: [
         {
           reason: "I want to provide a helpful response",
