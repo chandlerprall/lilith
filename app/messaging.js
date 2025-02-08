@@ -73,15 +73,50 @@ export const sendMessages = async () => {
     {
       method: 'POST',
       body: JSON.stringify({
+
+
+        // https://github.com/oobabooga/text-generation-webui/blob/main/extensions/openai/typing.py#L55
         mode: "instruct",
         messages: messages.value,
         max_tokens: 4096,
         temperature: 0.6,
         top_p: 1,
+        min_p: 0,
         top_k: 1,
         typical_p: 1,
         tfs: 1,
+        repetition_penalty: 1,
         frequency_penalty: 0.0,
+        presence_penalty: 0.0,
+
+        stop: ["</action>"],
+
+        grammar_string: `
+# support deepseek r1 format (and compatible with other models), and then force the xml response payload:
+# <think>...</think>
+# <?xml version="1.0" encoding="UTF-8"?>
+# <action reason="
+
+# root specifies the pattern for the overall output
+root ::= (
+    # it must start with the characters "<think>" followed by some lines of thought,
+    # followed by the closing "</think>" and a trailing newline
+    "<think>" think-line{3,7} "</think>\\n"
+
+    # then an XML declaration and start of document
+    "<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?>\\n"
+
+    # finally the action block
+    "<action reason=\\"" .{10,50} "\\">"
+
+    .+
+
+    "</action>"
+)
+
+
+think-line ::= [^<]{50,200} "\\n"
+`
       }),
       headers: {
         'Content-Type': 'application/json',
@@ -91,7 +126,9 @@ export const sendMessages = async () => {
 
   const parsed = await response.json();
   tokenUsage.value = parsed.usage.total_tokens;
+
   const message = parsed.choices[0].message;
+  message.content += "</action>" // re-add since it's a stop word;
 
   const persistedMessage = {
     role: message.role,
@@ -109,7 +146,7 @@ export const sendMessages = async () => {
 
   // match two groups: think and xml
   // think is everything before the xml declaration
-  const regexResult = message.content.match(/(?<think>.*?)(```xml[\r\n+](?<xml>.+)[\r\n+]```|xml(?<xml>.+))$/s);
+  const regexResult = message.content.match(/(?<think>.*?)(```xml[\r\n+](?<xml>.+)[\r\n+]```|(?<xml><\?xml.+))$/s);
   try {
     if (!regexResult) {
       respondWithError('Invalid response format, could not find xml declaraction');
@@ -165,6 +202,8 @@ export const sendMessages = async () => {
       return;
     } else if (actionDef.action === 'speak') {
       speakResults += actionDef.text + '\n';
+    } else if (actionDef.action === 'complete') {
+      speakResult += ' -=: assistant has ended the conversation :=-'
     } else {
       try {
         actionResults.push(await executeAction(actionDef));

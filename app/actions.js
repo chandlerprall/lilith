@@ -297,6 +297,16 @@ path CDATA #REQUIRED <!-- absolute path to the file -->
 >
 `,
   },
+
+  {
+    action: 'complete',
+    handler() { },
+    definition: `<!-- no more actions to take, time to end the conversation -->
+<!ELEMENT complete EMPTY>
+<!ATTLIST complete
+  outcome CDATA #REQUIRED
+>`,
+  },
 ];
 
 export const getActionNames = () => {
