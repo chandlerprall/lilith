@@ -76,20 +76,20 @@ export const sendMessages = async () => {
 
 
         // https://github.com/oobabooga/text-generation-webui/blob/main/extensions/openai/typing.py#L55
-        mode: "instruct",
+        mode: "chat-instruct",
         messages: messages.value,
         max_tokens: 4096,
         temperature: 0.6,
-        top_p: 1,
-        min_p: 0,
-        top_k: 1,
-        typical_p: 1,
-        tfs: 1,
-        repetition_penalty: 1,
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
+        top_p: 1, // if not set to 1, select tokens with probabilities adding up to less than this number. Higher value = higher range of possible random results.
+        min_p: 0.2, // Tokens with probability smaller than `(min_p) * (probability of the most likely token)` are discarded. This is the same as top_a but without squaring the probability.
+        top_k: 1, // Similar to top_p, but select instead only the top_k most likely tokens. Higher value = higher range of possible random results.
+        typical_p: 1, // If not set to 1, select only tokens that are at least this much more likely to appear than random tokens, given the prior text.
+        tfs: 0.5, // Tries to detect a tail of low-probability tokens in the distribution and removes those tokens. See this [blog post](https://www.trentonbricken.com/Tail-Free-Sampling/) for details. The closer to 0, the more discarded tokens.
+        repetition_penalty: 1.1, // Penalty factor for repeating prior tokens. 1 means no penalty, higher value = less repetition, lower value = more repetition.
+        frequency_penalty: 0.0, // Repetition penalty that scales based on how many times the token has appeared in the context. Be careful with this; there's no limit to how much a token can be penalized.
+        presence_penalty: 0.0, // Similar to repetition_penalty, but with an additive offset on the raw token scores instead of a multiplicative factor. It may generate better results. 0 means no penalty, higher value = less repetition, lower value = more repetition. Previously called "additive_repetition_penalty".
 
-        stop: ["</action>"],
+        // stop: ["</action>"],
 
         grammar_string: `
 # support deepseek r1 format (and compatible with other models), and then force the xml response payload:
@@ -101,13 +101,13 @@ export const sendMessages = async () => {
 root ::= (
     # it must start with the characters "<think>" followed by some lines of thought,
     # followed by the closing "</think>" and a trailing newline
-    "<think>" think-line{3,7} "</think>\\n"
+    "<think>\\n" think-line{1,5} "</think>\\n"
 
     # then an XML declaration and start of document
     "<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?>\\n"
 
     # finally the action block
-    "<action reason=\\"" .{10,50} "\\">"
+    "<action reason=\\"" .{10,100} "\\">"
 
     .+
 
@@ -115,7 +115,7 @@ root ::= (
 )
 
 
-think-line ::= [^<]{50,200} "\\n"
+think-line ::= [^<]{25,100} "\\n"
 `
       }),
       headers: {
@@ -128,7 +128,7 @@ think-line ::= [^<]{50,200} "\\n"
   tokenUsage.value = parsed.usage.total_tokens;
 
   const message = parsed.choices[0].message;
-  message.content += "</action>" // re-add since it's a stop word;
+  // message.content += "</action>" // re-add since it's a stop word;
 
   const persistedMessage = {
     role: message.role,
@@ -221,7 +221,7 @@ think-line ::= [^<]{50,200} "\\n"
   if (actionResults.length) {
     sendMessage(`action results\n----------\n${actionResults.join('\n----------\n')}`);
   } else {
-    sendMessage();
+    // sendMessage();
   }
 }
 
@@ -245,7 +245,7 @@ export const resetMessages = () => {
 function getInitialMessages() {
   return [
     {
-      role: 'user',
+      role: 'system',
       content: '[context]',
       isContext: true,
     },

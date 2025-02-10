@@ -15,13 +15,6 @@ function keysOfOr(obj, or) {
 
 const actions = [
   {
-    action: 'speak',
-    handler() {/* handled by project code */ },
-    definition: `<!-- give a response back to the conversation -->
-<!ELEMENT speak (#PCDATA)>`,
-  },
-
-  {
     action: 'calculate',
     handler({ equation }) {
       return eval(equation);
@@ -256,10 +249,29 @@ path CDATA #REQUIRED <!-- absolute path to the file -->
       if (format === "html") {
         return await page.content();
       } else if (format === "text") {
-        return await page.evaluate(() => document.body.innerText);
+        return await page.evaluate(() => document.body.textContent);
       } else if (format === "markdown") {
         const turndownService = new TurndownService()
-        return turndownService.turndown(await page.content());
+        const html = await page.evaluate(() => {
+          // starting with the body element, clone the current node and all of its (visible!) children
+          function doClone(node) {
+            const clone = node.cloneNode();
+            for (const child of node.childNodes) {
+              if (child.nodeType === Node.TEXT_NODE) {
+                clone.appendChild(child.cloneNode());
+              } else if (child.nodeType === Node.ELEMENT_NODE && child.tagName !== "SCRIPT" && child.tagName !== "STYLE") {
+                if (child.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })) {
+                  clone.appendChild(doClone(child));
+                }
+              }
+            }
+            return clone;
+          }
+
+          const filteredBody = doClone(document.body);
+          return filteredBody.outerHTML;
+        });
+        return turndownService.turndown(html);
       } else {
         throw new Error(`Unknown format ${format}`);
       }
@@ -306,6 +318,13 @@ path CDATA #REQUIRED <!-- absolute path to the file -->
 <!ATTLIST complete
   outcome CDATA #REQUIRED
 >`,
+  },
+
+  {
+    action: 'speak',
+    handler() {/* handled by project code */ },
+    definition: `<!-- give a response back to the conversation -->
+<!ELEMENT speak (#PCDATA)>`,
   },
 ];
 
