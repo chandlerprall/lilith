@@ -1,23 +1,48 @@
 import { registerComponent, element } from '@venajs/core';
-import { isBusy as isMessagingBusy, sendMessage, messages, resetMessages, allowAutoRun, sendMessages, tokenUsage } from '../messaging.js';
+import { sessions } from '../project.js';
+import { activeSession, continueSession, resetSession, closeSession } from '../session.js';
 
-registerComponent('l-chatview', ({ render, refs }) => {
+import './chatview-empty.js';
+
+const isActiveSessionBusy = activeSession.map(session => {
+  return session.busy;
+});
+
+function refreshSessions() {
+  sessions.dirty = true;
+}
+
+registerComponent('l-chatview', ({ render, element: me }) => {
   const handleMessageKeyDown = (event) => {
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-      const message = refs.message.value;
-      refs.message.value = '';
-      sendMessage(message);
+      const msgEl = me.shadowRoot.querySelector('#message');
+      const content = msgEl.value;
+      msgEl.value = '';
+      continueSession(
+        activeSession.value,
+        {
+          role: 'user',
+          content,
+        },
+        true // force it to send, even if autorun is disabled
+      );
     }
   }
 
   render`
     <style>
       :host {
-        display: flex;
-        flex-direction: column;
+        display: block;
         width: 100%;
         height: 100%;
-        overflow: scroll;
+        overflow: hidden;
+      }
+
+      section {
+        display: grid;
+        grid: auto 1fr auto / auto;
+        width: 100%;
+        height: 100%;
       }
       
       h2 {
@@ -50,31 +75,49 @@ registerComponent('l-chatview', ({ render, refs }) => {
       }
     </style>
     
-    <h2>
-      chat
-      <div class="meta">
-        <button onclick=${resetMessages}>clear</button>
-        tokens used: ${tokenUsage}
-        <input type="checkbox" checked=${allowAutoRun} onchange=${e => {
-          allowAutoRun.value = e.target.checked;
+    ${sessions.map(sessions => {
+    return sessions.length === 0 ? element`<l-chatview-empty/>` : element`
+        <section>
+          ${activeSession.map((activeSession) => {
+      return element`
+            <h2>
+              chat
+              <div class="meta">
+                <button onclick=${() => resetSession(activeSession)}>reset</button>
+                <button onclick=${e => {
+          const btn = e.target;
+          if (btn.innerText === 'close') {
+            btn.innerText = 'are you sure?';
 
-          if (e.target.checked) {
-            sendMessages();
+            setTimeout(() => {
+              btn.innerText = 'close';
+            }, 2500);
+          } else {
+            closeSession(activeSession);
           }
+        }}>close</button>
+                tokens used: ${activeSession.tokensUsed}
+                <input type="checkbox" checked=${activeSession.autorun} onchange=${e => {
+          activeSession.autorun = e.target.checked;
+          refreshSessions();
         }} /> auto-run
-      </div>
-    </h2>
-    <div id="messages">
-      ${messages.map(messages => {
-      return messages.map((message, idx) => {
-        return element`<l-message message=${message} isContext=${idx === 0}></l-message>`;
+              </div>
+            </h2>`;
+    })}
+          <div id="messages">
+            ${activeSession.map(({ messages }) => {
+      return messages.map(message => {
+        return element`<l-message message=${message}></l-message>`;
       })
     })}
-    </div>
-    <textarea
-      id="message"
-      disabled=${isMessagingBusy}
-      placeholder=${isMessagingBusy.map(busy => busy ? 'processing...' : 'type a message')}
-      onkeydown=${handleMessageKeyDown}></textarea>
+          </div>
+          <textarea
+            id="message"
+            disabled=${isActiveSessionBusy}
+            placeholder=${isActiveSessionBusy.map(busy => busy ? 'processing...' : 'type a message')}
+            onkeydown=${handleMessageKeyDown}></textarea>
+        </section>
+      `
+  })}
   `;
 });

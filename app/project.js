@@ -7,6 +7,9 @@ const project = require(projectFilePath)
 
 project.issues = new ProxySignal(project.issues);
 
+export const sessions = new ProxySignal(project.sessions);
+sessions.on(writeProject);
+
 export default project
 
 export const writeIssue = (name, definition) => {
@@ -49,7 +52,7 @@ export const clearLog = () => {
   writeProject();
 }
 
-const writeProject = () => {
+function writeProject() {
   writeFileSync(projectFilePath, JSON.stringify(project, null, 2));
 }
 

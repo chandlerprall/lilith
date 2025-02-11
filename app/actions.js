@@ -1,7 +1,6 @@
 import { closeIssue, setKnowledgeBase, writeIssue } from "./project.js";
-import { browserSessions, closePageSession, navigateTo, startPageSession } from "./utils/browser.js";
-import { executeCommand, startTerminal, terminalProcesses, closeTerminal } from "./utils/terminal.js";
-const TurndownService = require("turndown");
+import { closePageSession, executeInPage, navigateTo, readBrowserPage, startPageSession } from "./utils/browser.js";
+import { executeCommand, startTerminal, closeTerminal, readTerminal } from "./utils/terminal.js";
 const os = require('os');
 const path = require('path');
 const { exec } = require('child_process');
@@ -9,14 +8,10 @@ const { promisify } = require('util');
 const { readFileSync, writeFileSync, unlinkSync } = require('fs');
 const execAsync = promisify(exec);
 
-function keysOfOr(obj, or) {
-  return Object.keys(obj).length > 0 ? Object.keys(obj).join(', ') : or;
-}
-
 const actions = [
   {
     action: 'calculate',
-    handler({ equation }) {
+    handler(session, { equation }) {
       return eval(equation);
     },
     definition: `<!-- perform a mathematical calculation -->
@@ -28,7 +23,7 @@ const actions = [
 
   {
     action: 'nodejs_runcode',
-    async handler(_, code) {
+    async handler(session, _, code) {
       const tmpFile = path.join(os.tmpdir(), '__lilith.js');
       writeFileSync(tmpFile, code);
       const { stdout, stderr } = await execAsync(`node ${tmpFile}`);
@@ -40,7 +35,7 @@ const actions = [
 
   {
     action: "issues.write",
-    async handler({ title }, description) {
+    async handler(session, { title }, description) {
       const issue = await writeIssue(title, description);
       return `Issue ${issue.id} created for ${issue.name}: ${description}`;
     },
@@ -52,7 +47,7 @@ title CDATA #REQUIRED
   },
   {
     action: "issues.close",
-    async handler({ id }) {
+    async handler(session, { id }) {
       await closeIssue(id);
       return `Issue ${id} closed`;
     },
@@ -64,8 +59,8 @@ id CDATA #REQUIRED <!-- id of the issue to close -->
 
   {
     action: 'terminal.start',
-    async handler() {
-      return startTerminal();
+    async handler(session) {
+      return startTerminal(session);
     },
     definition: `<!-- open a new terminal in the project directory -->
     <!-- **note** this returns the terminal id for use in the other terminal actions, you must wait before using a started temrinal -->
@@ -73,52 +68,47 @@ id CDATA #REQUIRED <!-- id of the issue to close -->
   },
   {
     action: 'terminal.run',
-    async handler({ id }, command) {
-      return await executeCommand(id, command);
+    async handler(session, { id }, command) {
+      return await executeCommand(session, id, command);
     },
     get definition() {
       return `<!-- sends input to the terminal's stdin, resulting stdout and stderr are returned -->
 <!ELEMENT terminal.run (#PCDATA)> <!-- element body is used as the command -->
 <!ATTLIST terminal.run
-id CDATA #REQUIRED <!-- id of the terminal, options: ${keysOfOr(terminalProcesses, '[no terminals are open]')} -->
+id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't have an ID -->
 >`;
     },
   },
   {
     action: 'terminal.read',
-    async handler({ id, lineCount }) {
-      const terminalWindow = terminalProcesses[id];
-      if (!terminalWindow) {
-        throw new Error(`Terminal ${id} not found`);
-      }
-      const { output } = terminalWindow;
-      return lineCount ? output.value.split('\n').slice(-lineCount).join('\n') : output.value;
+    async handler(session, { id, lineCount }) {
+      return readTerminal(session, id, lineCount)
     },
     get definition() {
       return `<!ELEMENT terminal.read EMPTY>
 <!ATTLIST terminal.read
-id CDATA #REQUIRED <!-- id of the terminal, options: ${keysOfOr(terminalProcesses, '[no terminals are open]')} -->
+id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't have an ID -->
 lineCount CDATA #IMPLIED <!-- number of lines to limit read to, if omitted all lines are read -->
 >`;
     },
   },
   {
     action: 'terminal.close',
-    async handler({ id }) {
-      closeTerminal(id);
+    async handler(session, { id }) {
+      closeTerminal(session, id);
       return "terminal has been closed";
     },
     get definition() {
       return `<!ELEMENT terminal.close EMPTY>
 <!ATTLIST terminal.close
-id CDATA #REQUIRED <!-- id of the terminal, options: ${keysOfOr(terminalProcesses, '[no terminals are open]')} -->
+id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't have an ID -->
 >`;
     },
   },
 
   {
     action: 'knowledgebase.write',
-    async handler(_, content) {
+    async handler(session, _, content) {
       setKnowledgeBase(content);
       return `Knowledgebase written`;
     },
@@ -130,7 +120,7 @@ id CDATA #REQUIRED <!-- id of the terminal, options: ${keysOfOr(terminalProcesse
 
   {
     action: 'file.write',
-    async handler({ path, startLine, endLine }, content) {
+    async handler(session, { path, startLine, endLine }, content) {
       // handle undefined & string values in startLine and endLine
       startLine = startLine ? parseInt(startLine, 10) : undefined;
       endLine = endLine ? parseInt(endLine, 10) : undefined;
@@ -191,7 +181,7 @@ endLine CDATA #IMPLIED <!-- line number to stop writing, inclusive -->
   },
   {
     action: 'file.read',
-    async handler({ path, includeLineNumbers = "false" }) {
+    async handler(session, { path, includeLineNumbers = "false" }) {
       let contents = readFileSync(path, 'utf8');
       if (includeLineNumbers === "true") {
         // line numbers should be left-padding
@@ -209,7 +199,7 @@ includeLineNumbers (true | false) "false" <!-- whether to include line numbers i
   },
   {
     action: 'file.delete',
-    async handler({ path }) {
+    async handler(session, { path }) {
       unlinkSync(path);
       return `File deleted at ${path}`;
     },
@@ -222,90 +212,58 @@ path CDATA #REQUIRED <!-- absolute path to the file -->
 
   {
     action: 'browser.open',
-    async handler() {
-      return await startPageSession();
+    async handler(session) {
+      return await startPageSession(session);
     },
     definition: `<!-- **note** this returns the session id for use in the other browser actions, you must wait before using an opened browser -->
 <!ELEMENT browser.open EMPTY>`,
   },
   {
     action: 'browser.navigate',
-    async handler({ id, url }) {
-      return await navigateTo(id, url);
+    async handler(session, { id, url }) {
+      return await navigateTo(session, id, url);
     },
     definition: `<!ELEMENT browser.navigate (EMPTY)>
 <!ATTLIST browser.navigate
-  id CDATA #REQUIRED <!-- id of the browser session, options: ${keysOfOr(browserSessions, '[no browsers are open]')} -->
+  id CDATA #REQUIRED <!-- id of the browser session -->
   url CDATA #REQUIRED <!-- url to navigate to -->
 >`,
   },
   {
     action: 'browser.read',
-    async handler({ id, format }) {
-      const page = browserSessions[id];
-      if (!page) {
-        throw new Error(`Browser session ${id} not found`);
-      }
-      if (format === "html") {
-        return await page.content();
-      } else if (format === "text") {
-        return await page.evaluate(() => document.body.textContent);
-      } else if (format === "markdown") {
-        const turndownService = new TurndownService()
-        const html = await page.evaluate(() => {
-          // starting with the body element, clone the current node and all of its (visible!) children
-          function doClone(node) {
-            const clone = node.cloneNode();
-            for (const child of node.childNodes) {
-              if (child.nodeType === Node.TEXT_NODE) {
-                clone.appendChild(child.cloneNode());
-              } else if (child.nodeType === Node.ELEMENT_NODE && child.tagName !== "SCRIPT" && child.tagName !== "STYLE") {
-                if (child.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })) {
-                  clone.appendChild(doClone(child));
-                }
-              }
-            }
-            return clone;
-          }
-
-          const filteredBody = doClone(document.body);
-          return filteredBody.outerHTML;
-        });
-        return turndownService.turndown(html);
-      } else {
-        throw new Error(`Unknown format ${format}`);
-      }
+    async handler(session, { id, format }) {
+      return await readBrowserPage(session, id, format);
     },
     definition: `<!ELEMENT browser.read EMPTY>
 <!ATTLIST browser.read
-  id CDATA #REQUIRED <!-- id of the browser session, options: ${keysOfOr(browserSessions, '[no browsers are open]')} -->
+  id CDATA #REQUIRED <!-- id of the browser session -->
   format (html | text | markdown) "markdown" <!-- format to read the page in -->
 >`,
   },
   {
     action: 'browser.execute',
-    async handler({ id, waitMsAfter }, code) {
+    async handler(session, { id, waitMsAfter }, code) {
       if (waitMsAfter) {
         waitMsAfter = parseInt(waitMsAfter, 10);
       }
-      return await executeInPage(id, waitMsAfter, code);
+      return await executeInPage(session, id, waitMsAfter, code);
     },
     definition: `<!-- function body to execute javascript in the page (it is wrapped in an async function so await usage is safe) -->
 <!ELEMENT browser.execute (#PCDATA)> <!-- any value from \`return\` is reported back -->
 <!ATTLIST browser.execute
-  id CDATA #REQUIRED <!-- id of the browser session, options: ${keysOfOr(browserSessions, '[no browsers are open]')} -->
+  id CDATA #REQUIRED <!-- id of the browser session -->
   waitMsAfter CDATA #IMPLIED <!-- if present, the number of milliseconds to wait after the code is excuted, before returning -->
 >`,
   },
   {
     action: 'browser.close',
-    async handler({ id }) {
-      return await closePageSession(id);
+    async handler(session, { id }) {
+      return await closePageSession(session, id);
     },
     definition: `<!-- close browser session -->
 <!ELEMENT browser.close EMPTY>
 <!ATTLIST browser.close
-  id CDATA #REQUIRED <!-- id of the browser session, options: ${keysOfOr(browserSessions, '[no browsers are open]')} -->
+  id CDATA #REQUIRED <!-- id of the browser session -->
 >
 `,
   },
@@ -328,21 +286,50 @@ path CDATA #REQUIRED <!-- absolute path to the file -->
   },
 ];
 
-export const getActionNames = () => {
-  return actions.map(action => action.action).join(' | ');
+export const getActionNames = (definedActions) => {
+  return definedActions.map(action => action.action).join(' | ');
 }
 
-export const getActionDefinitions = () => {
-  return actions.reduce((acc, action) => {
+export const filterActionsByTypes = (types) => {
+  if (Array.isArray(types)) {
+    types = new Set(types);
+  }
+  return actions.filter(action => types.has(action.action));
+}
+export const getActionsContext = (definedActions = actions) => {
+  const actionDefs = definedActions.reduce((acc, action) => {
     acc += action.definition + "\n\n";
     return acc;
   }, '');
+
+  return `All of the responses are **only ever** a XML document containing the singular action to take, making great use of CDATA. There is no text before or after the XML document. An example document is:
+
+\`\`\`document
+<?xml version="1.0" encoding="UTF-8"?>
+<action reason="I want to say hi">
+  <speak><![CDATA[my message]]></speak>
+</action>
+\`\`\`
+
+More formally, the document follows this definition:
+  
+\`\`\`dtd
+<!ELEMENT action (${getActionNames(definedActions)})>
+<!ATTLIST action
+  reason CDATA #REQUIRED <!-- describe why you are taking this action -->
+>
+
+${actionDefs}
+\`\`\`
+
+<speak /> content is delivered back to the engineer's boss for him to respond, while the results of any action(s) are delivered back to the staff engineer for them to continue on. Also note how there is always exactly one child element of <action />.
+`;
 }
 
-export const executeAction = async ({ action: actionName, args, text }) => {
+export const executeAction = async (session, { action: actionName, args, text }) => {
   const actionHandler = actions.find(a => a.action === actionName)?.handler;
   if (!actionHandler) {
     throw new Error(`No handler found for action type ${actionName}`);
   }
-  return await actionHandler(args, text);
+  return await actionHandler(session, args, text);
 }

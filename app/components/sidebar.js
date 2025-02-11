@@ -8,6 +8,7 @@ registerComponent('l-sidebar', ({ render }) => {
         display: block;
         width: 100%;
         height: 100%;
+        overflow: scroll;
         box-sizing: border-box;
         border-right: 1px solid #e0e0e0;
         background-color: #f0f0f0;

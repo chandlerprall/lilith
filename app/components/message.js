@@ -67,10 +67,12 @@ registerComponent('l-message', ({ render, attributes }) => {
       }
     </style>
 
-    ${message.map(({ role, think, content, actions, actionResults, isContext }) => {
-    if (isContext) {
+    ${message.map(({ role, think, content, actions, actionResults }) => {
+
+    if (role === 'system') {
       return element`<section>
-          <strong>[context]</strong>
+          <strong>${role}</strong>
+          <pre class="lineWrap">[context]</pre>
         </section>`;
     }
 

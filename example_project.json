@@ -1,8 +1,8 @@
 {
-  "name": "Calculator",
-  "directory": "/Users/chandlerprall/projects/calulator",
-  "context": "You are writing an in-browser calulator app using React.js",
+  "name": "Project",
+  "directory": "/path/to/project",
+  "context": "You are writing a web app using React.js",
   "issues": [],
-  "log": [],
+  "sessions": [],
   "knowledgeBase": null
 }

@@ -4,9 +4,18 @@ import { getId } from './id.js';
 
 const { spawn, execSync } = require('child_process');
 
-export const terminalProcesses = {};
+const sessionTerminalProcesses = new WeakMap();
+const allOpenTerminalProcesses = new Set();
 
-export const startTerminal = async () => {
+const getSessionTerminalProcesses = (session) => {
+  if (!sessionTerminalProcesses.has(session)) {
+    sessionTerminalProcesses.set(session, {});
+  }
+  return sessionTerminalProcesses.get(session);
+}
+
+export const startTerminal = async (session) => {
+  const terminalProcesses = getSessionTerminalProcesses(session);
   const existingIds = new Set(Object.keys(terminalProcesses));
   const id = getId(existingIds);
 
@@ -18,6 +27,7 @@ export const startTerminal = async () => {
   })
 
   const process = spawn('sh', { cwd: project.directory, detached: true })
+  allOpenTerminalProcesses.add(process);
   process.unref();
 
   process.on('close', () => {
@@ -39,7 +49,8 @@ export const startTerminal = async () => {
   return `Terminal ${id} started`;
 }
 
-export const executeCommand = async (id, command) => {
+export const executeCommand = async (session, id, command) => {
+  const terminalProcesses = getSessionTerminalProcesses(session);
   const terminalWindow = terminalProcesses[id];
   if (!terminalWindow) {
     throw new Error(`Terminal ${id} not found`);
@@ -72,7 +83,18 @@ export const executeCommand = async (id, command) => {
   return `stdout\n-----\n${stdout}\nstderr\n-----\n${stderr}`;
 }
 
-export const closeTerminal = (id) => {
+export const readTerminal = (session, id, lineCount) => {
+  const terminalProcesses = getSessionTerminalProcesses(session);
+  const terminalWindow = terminalProcesses[id];
+  if (!terminalWindow) {
+    throw new Error(`Terminal ${id} not found`);
+  }
+  const { output } = terminalWindow;
+  return lineCount ? output.value.split('\n').slice(-lineCount).join('\n') : output.value;
+}
+
+export const closeTerminal = (session, id) => {
+  const terminalProcesses = getSessionTerminalProcesses(session);
   const terminalWindow = terminalProcesses[id];
   if (!terminalWindow) {
     throw new Error(`Terminal ${id} not found`);
@@ -80,6 +102,13 @@ export const closeTerminal = (id) => {
   const { process, output } = terminalWindow;
   output.value = '';
 
+  killTerminalProcess(process);
+
+  delete terminalProcesses[id];
+  allOpenTerminalProcesses.delete(process);
+}
+
+function killTerminalProcess(process) {
   // use pkill to kill any of its children
   try {
     // the command fails if the process has no children
@@ -88,17 +117,13 @@ export const closeTerminal = (id) => {
 
   // kill the process
   process.kill();
-
-  delete terminalProcesses[id];
 }
 
-export const closeTerminals = () => {
-  Object.keys(terminalProcesses).forEach(id => closeTerminal(id));
+const closeTerminals = () => {
+  // close all terminals
+  allOpenTerminalProcesses.forEach(process => {
+    killTerminalProcess(process.pid);
+  });
 }
-
-window.startTerminal = startTerminal;
-window.executeCommand = executeCommand;
-window.closeTerminal = closeTerminal;
-window.terminalProcesses = terminalProcesses;
 
 window.addEventListener('beforeunload', closeTerminals);

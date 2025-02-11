@@ -1,12 +1,22 @@
 import { getId } from './id.js';
 
 const puppeteer = require('puppeteer');
+const TurndownService = require("turndown");
 
 let browser;
 
-export const browserSessions = {};
+const sessionBrowsers = new WeakMap();
 
-export const startPageSession = async () => {
+const getSessionBrowsers = (session) => {
+  if (!sessionBrowsers.has(session)) {
+    sessionBrowsers.set(session, {});
+  }
+  return sessionBrowsers.get(session);
+}
+
+export const startPageSession = async (session) => {
+  const browserSessions = getSessionBrowsers(session);
+
   await ensureBrowser();
 
   const existingIds = new Set(Object.keys(browserSessions));
@@ -19,7 +29,8 @@ export const startPageSession = async () => {
   return `Browser session ${id} started`;
 }
 
-export const closePageSession = async (id) => {
+export const closePageSession = async (session, id) => {
+  const browserSessions = getSessionBrowsers(session);
   const page = browserSessions[id];
   if (!page) {
     throw new Error(`Browser session ${id} not found`);
@@ -36,7 +47,8 @@ export const closePageSession = async (id) => {
   return `Browser session ${id} closed`;
 }
 
-export const navigateTo = async (id, url) => {
+export const navigateTo = async (session, id, url) => {
+  const browserSessions = getSessionBrowsers(session);
   const page = browserSessions[id];
   if (!page) {
     throw new Error(`Browser session ${id} not found`);
@@ -45,7 +57,45 @@ export const navigateTo = async (id, url) => {
   return `Navigated to ${url}`;
 }
 
-export const executeInPage = async (id, waitMsAfter = 0, code) => {
+export const readBrowserPage = async (session, id, format = "markdown") => {
+  const browserSessions = getSessionBrowsers(session);
+  const page = browserSessions[id];
+  if (!page) {
+    throw new Error(`Browser session ${id} not found`);
+  }
+  if (format === "html") {
+    return await page.content();
+  } else if (format === "text") {
+    return await page.evaluate(() => document.body.textContent);
+  } else if (format === "markdown") {
+    const turndownService = new TurndownService()
+    const html = await page.evaluate(() => {
+      // starting with the body element, clone the current node and all of its (visible!) children
+      function doClone(node) {
+        const clone = node.cloneNode();
+        for (const child of node.childNodes) {
+          if (child.nodeType === Node.TEXT_NODE) {
+            clone.appendChild(child.cloneNode());
+          } else if (child.nodeType === Node.ELEMENT_NODE && child.tagName !== "SCRIPT" && child.tagName !== "STYLE") {
+            if (child.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })) {
+              clone.appendChild(doClone(child));
+            }
+          }
+        }
+        return clone;
+      }
+
+      const filteredBody = doClone(document.body);
+      return filteredBody.outerHTML;
+    });
+    return turndownService.turndown(html);
+  } else {
+    throw new Error(`Unknown format ${format}`);
+  }
+}
+
+export const executeInPage = async (session, id, waitMsAfter = 0, code) => {
+  const browserSessions = getSessionBrowsers(session);
   const page = browserSessions[id];
   if (!page) {
     throw new Error(`Browser session ${id} not found`);
@@ -97,9 +147,3 @@ async function ensureBrowser() {
     });
   }
 }
-
-window.browserSessions = browserSessions;
-window.startPageSession = startPageSession;
-window.closePageSession = closePageSession;
-window.navigateTo = navigateTo;
-window.executeInPage = executeInPage;
