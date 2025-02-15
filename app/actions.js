@@ -1,6 +1,7 @@
 import { closeIssue, setKnowledgeBase, writeIssue } from "./project.js";
 import { closePageSession, executeInPage, navigateTo, readBrowserPage, startPageSession } from "./utils/browser.js";
 import { executeCommand, startTerminal, closeTerminal, readTerminal } from "./utils/terminal.js";
+import { activeSession, awaitSession, continueSession, sessionDefinitions, startSession } from "./session.js";
 const os = require('os');
 const path = require('path');
 const { exec } = require('child_process');
@@ -9,6 +10,47 @@ const { readFileSync, writeFileSync, unlinkSync } = require('fs');
 const execAsync = promisify(exec);
 
 const actions = [
+  {
+    action: 'task.start',
+    async handler(session, { title }, description) {
+      const newSession = startSession({
+        parent: session,
+        task: { type: 'freeform', title, description },
+        type: structuredClone(session.meta.type)
+      });
+      newSession.autorun = session.autorun; // inherit autorun
+      newSession.messages.length = 1; // keep only the system message
+      newSession.messages.push({
+        role: 'user',
+        content: 'Start on the current task. First, decide if you can resolve the task immediately or if you will be creating sub tasks. As a reminder, only lengthy tasks should be broken into sub tasks.',
+      })
+
+      continueSession(newSession, undefined, true);
+      activeSession.value = newSession;
+      const { status, result } = await awaitSession(newSession);
+      activeSession.value = session;
+
+      return `${status}\n---\n${result}`;
+    },
+    definition: `<!-- start a new task, action returns with the results -->
+<!ELEMENT task.start (#PCDATA)> <!-- element contents is a description of the task -->
+<!ATTLIST task.start
+  title CDATA #REQUIRED <!-- title provides an at-a-glance identifier for the task -->
+>`,
+  },
+  {
+    action: 'task.success',
+    handler() {/* handled by project code */ },
+    definition: `<!-- mark the current task as completed successfully -->
+<!ELEMENT task.success (#PCDATA)> <!-- results to return to who started the task, this should meet the requirements provided by the current task -->`
+  },
+  {
+    action: 'task.failure',
+    handler() {/* handled by project code */ },
+    definition: `<!-- mark the current task as failed  -->
+<!ELEMENT task.failure (#PCDATA)> <!-- results to return to who started the task, use the space to describe the results and why the task failed -->`
+  },
+
   {
     action: 'calculate',
     handler(session, { equation }) {
@@ -33,29 +75,29 @@ const actions = [
 <!ELEMENT nodejs_runcode (#PCDATA)>`,
   },
 
-  {
-    action: "issues.write",
-    async handler(session, { title }, description) {
-      const issue = await writeIssue(title, description);
-      return `Issue ${issue.id} created for ${issue.name}: ${description}`;
-    },
-    definition: `<!-- sets the titled issue's description to the element text -->
-<!ELEMENT issues.write (#PCDATA)>
-<!ATTLIST issues.write
-title CDATA #REQUIRED
->`,
-  },
-  {
-    action: "issues.close",
-    async handler(session, { id }) {
-      await closeIssue(id);
-      return `Issue ${id} closed`;
-    },
-    definition: `<!ELEMENT issues.close EMPTY>
-<!ATTLIST issues.close
-id CDATA #REQUIRED <!-- id of the issue to close -->
->`,
-  },
+  //   {
+  //     action: "issues.write",
+  //     async handler(session, { title }, description) {
+  //       const issue = await writeIssue(title, description);
+  //       return `Issue ${issue.id} created for ${issue.name}: ${description}`;
+  //     },
+  //     definition: `<!-- sets the titled issue's description to the element text -->
+  // <!ELEMENT issues.write (#PCDATA)>
+  // <!ATTLIST issues.write
+  // title CDATA #REQUIRED
+  // >`,
+  //   },
+  //   {
+  //     action: "issues.close",
+  //     async handler(session, { id }) {
+  //       await closeIssue(id);
+  //       return `Issue ${id} closed`;
+  //     },
+  //     definition: `<!ELEMENT issues.close EMPTY>
+  // <!ATTLIST issues.close
+  // id CDATA #REQUIRED <!-- id of the issue to close -->
+  // >`,
+  //   },
 
   {
     action: 'terminal.start',
@@ -106,17 +148,17 @@ id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't 
     },
   },
 
-  {
-    action: 'knowledgebase.write',
-    async handler(session, _, content) {
-      setKnowledgeBase(content);
-      return `Knowledgebase written`;
-    },
-    definition: `<! -- use the knowledge base to store information that is useful for anyone working on the project
-    it is useful to continually update this with new information as it is discovered or produced
-    we encourage markdown formatting -->
-<!ELEMENT knowledgebase.write (#PCDATA)> <!-- element body is used as the new knowledgebase -->`,
-  },
+  //   {
+  //     action: 'knowledgebase.write',
+  //     async handler(session, _, content) {
+  //       setKnowledgeBase(content);
+  //       return `Knowledgebase written`;
+  //     },
+  //     definition: `<! -- use the knowledge base to store information that is useful for anyone working on the project
+  //     it is useful to continually update this with new information as it is discovered or produced
+  //     we encourage markdown formatting -->
+  // <!ELEMENT knowledgebase.write (#PCDATA)> <!-- element body is used as the new knowledgebase -->`,
+  //   },
 
   {
     action: 'file.write',
@@ -269,19 +311,9 @@ path CDATA #REQUIRED <!-- absolute path to the file -->
   },
 
   {
-    action: 'complete',
-    handler() { },
-    definition: `<!-- no more actions to take, time to end the conversation -->
-<!ELEMENT complete EMPTY>
-<!ATTLIST complete
-  outcome CDATA #REQUIRED
->`,
-  },
-
-  {
     action: 'speak',
     handler() {/* handled by project code */ },
-    definition: `<!-- give a response back to the conversation -->
+    definition: `<!-- give a response back to the user; NOTE: do not use speak to return task information, just complete the task -->
 <!ELEMENT speak (#PCDATA)>`,
   },
 ];

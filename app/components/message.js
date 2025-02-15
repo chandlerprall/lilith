@@ -100,6 +100,8 @@ registerComponent('l-message', ({ render, attributes }) => {
       const spokenWords = actions?.filter(action => action.action === 'speak').map(action => action.text).join('\n');
       const remainingActions = actions?.filter(action => action.action !== 'speak');
 
+      const taskResult = actions?.[0]?.action === 'task.success' || actions?.[0]?.action === 'task.failure' ? element`<pre>${actions?.[0].text}</span>` : "";
+
       return element`<div>
                 <pre class="think" data-open=${isThinkExpanded} onclick=${() => isThinkExpanded.value = !isThinkExpanded.value}>${sanitize(think)}</pre>
                 <pre class="lineWrap">${sanitize(spokenWords)}</pre>
@@ -115,6 +117,7 @@ registerComponent('l-message', ({ render, attributes }) => {
                         ${sanitize(reason)}
                       </span>
                     </div>
+                    ${taskResult}
                     ${isExpanded.map(isExpanded => isExpanded ? element`<pre>${sanitize(JSON.stringify(args, null, 2))}\n\n${sanitize(actionResults[idx])}</pre>` : "")}
                   </div>
                 `;

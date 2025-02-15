@@ -1,12 +1,9 @@
 import { registerComponent, Signal } from "@venajs/core";
 import project, { sessions } from "./project.js";
-import { executeAction, filterActionsByTypes, getActionsContext } from "./actions.js";
+import { executeAction, getActionsContext } from "./actions.js";
+import { taskDefinitions } from "./tasks.js";
 
-const commonStyles = `
-border: 1px solid #e0e0e0;
-border-width: 1px 0;
-padding: 12px 0;
-`
+const sessionPromises = new Map();
 
 const ChatSessionConfig = registerComponent('l-chat-session-config', ({ render, element, refs }) => {
   Object.defineProperty(element, 'value', {
@@ -22,7 +19,6 @@ const ChatSessionConfig = registerComponent('l-chat-session-config', ({ render, 
     <style>
       :host {
         display: block;
-        ${commonStyles}
       }
     </style>
     Who do you want to chat with?
@@ -47,7 +43,6 @@ const PairingSessionConfig = registerComponent('l-pairing-session-config', ({ re
         display: flex;
         flex-direction: column;
         gap: 12px;
-        ${commonStyles}
       }
     </style>
     
@@ -63,45 +58,131 @@ const PairingSessionConfig = registerComponent('l-pairing-session-config', ({ re
   `;
 });
 
+function getTaskTitle(session) {
+  switch (session.meta.task.type) {
+    case 'none':
+      return '[no task for this session, follow the user\'s lead]';
+    case 'freeform':
+      return session.meta.task.title;
+    default:
+      return `[task type "${session.meta.task.type}" not understood, please report this to a supervisor ASAP]`;
+  }
+}
+
+function getTaskContext(session) {
+  let task;
+
+  switch (session.meta.task.type) {
+    case 'none':
+      task = '[no task for this session, follow the user\'s lead]';
+      break;
+
+    case 'freeform':
+      task = `
+**${session.meta.task.title}**
+
+${session.meta.task.description}
+      `;
+      break;
+
+    default:
+      task = `[task type "${session.meta.task.type}" not understood, please report this to a supervisor ASAP]`;
+      break;
+  }
+
+  let parentStack = [];
+  let parent = session.meta.parent;
+  while (parent) {
+    parentStack.unshift(getTaskTitle(parent));
+    parent = parent.meta.parent;
+  }
+
+  if (parentStack.length) {
+    return `${task}\n\n# Which has the parent tasks:\n${parentStack.join('\n')}`;
+  } else {
+    return task;
+  }
+}
+
+function getContext(session) {
+  let introduction;
+
+  switch (session.meta.type.type) {
+    case 'chat':
+      introduction = `The following is an interaction log between ${session.meta.type.who.name} and their boss.`;
+      break;
+    case 'pairing':
+      introduction = `The following is an interaction log between ${session.meta.type.executor.name} and ${session.meta.type.pairer.name}.`;
+      break;
+  }
+
+  return `
+${introduction}
+
+# Project description
+
+Name: ${project.name}
+Directory: ${project.directory}
+
+${project.context}
+
+While the project as a whole is important to keep in mind, the task at hand is the most important thing to focus on. Make sure you dedicate actions to the task at hand, and not the project as a whole.
+
+# Task
+
+This conversation takes place in the context of the above project. More specifically, this conversation is about the task:
+
+${getTaskContext(session)}
+
+## Task completion
+
+The intention of breaking operations into discrete tasks is to help the AI LLM agent focus on the task at hand. If the message history grows too long it will cause slow downs and eventually information dropping out of the context window.
+Due to the this, to help faciliate your current task it may be necessary to create new tasks. To do this, use the \`task.create\` action and include information about the task you want to create.
+If you need information that will likely span multiple actions or process lengths of content, it is best to split those into smaller tasks and compose the results.
+
+Do not over-optimize for this, e.g. creating tasks for every thing, as that will lead to a task creating a task creating a task creating a task, all tasked with the same thing without ever achieving a result.
+
+### Creating new tasks
+
+Be explicit in what you need returned from the task. For example, asking for "a javascript function" that adds two numbers may result in the function being authored and saved to a file, instead of responding with the function body.
+Instead, explicitly ask for "a javascript function" be returned as the task result. It's also important to remember LLMs halucinate and err on being overly agreeable, it is important to either have the task verify the output, or check yourself.
+
+### Completion
+
+To complete the task, use the \`task.complete\` action and include information completing the task. Do not take actions that are not neccessary for returning the requisite information.
+
+### Failure
+
+If you cannot fulfill the task for any reason, use the \`task.failure\` action and include information explaining why the task failed.
+
+# Messages
+
+## Format
+
+${getActionsContext()}
+
+## Content
+
+Notice how intelligent and concise both parties are, applying their wealth of experience and insight to deal with any issue.
+However, when getting stuck in a task they ask for input, never making something up.
+They are self-starters, using the available tools and actions to solve problems and understand hurdles, iterating to find the right solution.
+        `.trim();
+}
+
 export const sessionDefinitions = [
   {
     type: 'chat',
     configElement: ChatSessionConfig,
-    getSystemMessage({ who }) {
+    getSystemMessage({ type: { who } }) {
       return `You are a helpful assistant named ${who.name}.`;
-    },
-    getContext({ who }) {
-      return `
-The following is an interaction log between ${who.name} and their boss. They are working on the following project:
-
-Project name: ${project.name}
-Project is located at: ${project.directory}
-
-## About
-
-${project.context}
-
-## Existing issues
-
-${project.issues.value.map(({ id, name, closed }) => `* (${id}) ${name}${closed ? ' (closed)' : ' (open)'}`).join('\n')}
-
-## Knowledge base
-
-${project.knowledgeBase ?? "no knowledge base set"}
-
-# Messaging
-    
-${getActionsContext()}
-
-Notice how intelligent and concise ${who.name} is, applying their wealth of experience and insight to deal with any issue.
-However, when getting stuck in a task they ask for input, never making something up.
-They are a self-starter, using the available tools and actions to solve problems and understand hurdles, iterating to get to the right solution.
-      `.trim();
     }
   },
   {
     type: 'pairing',
     configElement: PairingSessionConfig,
+    getSystemMessage({ type: { executor, pairer } }) {
+      return `You are a helpful assistant named ${executor.name} and you are paired with ${pairer.name}.`;
+    }
   },
 ];
 
@@ -112,26 +193,51 @@ function refreshSessions() {
 
 export const activeSession = new Signal(sessions.value[0]);
 
-export const startSession = (parent, type, config) => {
-  const sessionDef = sessionDefinitions.find(session => session.type === type);
+class ExternallyResolvablePromise {
+  constructor() {
+    this.promise = new Promise(resolve => {
+      this.resolve = resolve;
+    });
+  }
+
+  then(...args) {
+    return this.promise.then(...args);
+  }
+
+  catch(...args) {
+    return this.promise.catch(...args);
+  }
+
+  finally(...args) {
+    return this.promise.finally(...args);
+  }
+}
+export const startSession = ({ parent = null, task, type }) => {
+  const typeDef = sessionDefinitions.find(def => def.type === type.type);
 
   const meta = {
     parent,
+    task,
     type,
-    context: sessionDef.getContext(config),
-    config,
   };
 
   const session = {
     meta,
-    messages: getInitialMessages(sessionDef.getSystemMessage(config)),
+    messages: getInitialMessages(typeDef.getSystemMessage(meta)),
 
     busy: false,
-    autorun: type !== 'chat',
+    autorun: type.type !== 'chat',
     tokensUsed: null,
   };
+
   sessions.push(session);
+  sessionPromises.set(session, new ExternallyResolvablePromise());
+
   return session;
+}
+
+export const awaitSession = (session) => {
+  return sessionPromises.get(session);
 }
 
 export const addMessageWithoutSending = (session, message) => {
@@ -140,7 +246,7 @@ export const addMessageWithoutSending = (session, message) => {
 }
 
 export const continueSession = (session, message, forceSend) => {
-  if (message.content) {
+  if (message && message.content) {
     session.messages.push(message);
     refreshSessions();
   }
@@ -151,8 +257,9 @@ export const continueSession = (session, message, forceSend) => {
 }
 
 export const resetSession = (session) => {
-  const sessionDef = sessionDefinitions.find(sessionDef => sessionDef.type === session.meta.type);
-  session.messages = getInitialMessages(sessionDef.getSystemMessage(session.meta.config));
+  const sessionDef = sessionDefinitions.find(sessionDef => sessionDef.type === session.meta.type.type);
+  session.messages = getInitialMessages(sessionDef.getSystemMessage(session.meta));
+  session.busy = false;
   refreshSessions();
 }
 
@@ -161,6 +268,11 @@ export const closeSession = (session) => {
   if (idx !== -1) {
     sessions.value.splice(idx, 1);
     refreshSessions();
+
+    if (activeSession.value === session) {
+      // load up the previous session, if any
+      activeSession.value = sessions.value.at(idx - 1);
+    }
   }
 }
 
@@ -195,7 +307,22 @@ const sendMessages = async (session) => {
   session.busy = true;
   refreshSessions();
 
-  const sessionDef = sessionDefinitions.find(def => def.type === session.meta.type);
+  const sessionTaskDef = taskDefinitions.find(def => def.type === session.meta.task.type);
+  const sessionTypeDef = sessionDefinitions.find(def => def.type === session.meta.type.type);
+
+  /*
+  tensorcors and flash attention tracking
+
+  Qwen2.5-Coder-14B-Instruct-Q6_K_L.gguf
+
+  flash attention appears to dramatically increase entropy in the conversation (avoids repetition)
+
+  static, tensor, attention: 3s
+  random, tensor, attention: 6s - jumps around quite a bit; slowish growth
+  static, tensor: 6s; stable at 5.5->6.5s
+  random, tensor: 4.5s; slow growth
+
+  */
 
   const response = await fetch(
     'http://10.0.0.77:5000/v1/chat/completions',
@@ -204,20 +331,18 @@ const sendMessages = async (session) => {
       body: JSON.stringify({
         // https://github.com/oobabooga/text-generation-webui/blob/main/extensions/openai/typing.py#L55
         mode: "chat-instruct",
-        context: session.meta.context,
+        context: getContext(session),
         messages: session.messages,
         max_tokens: 4096,
-        temperature: 0.6,
-        top_p: 1, // if not set to 1, select tokens with probabilities adding up to less than this number. Higher value = higher range of possible random results.
+        temperature: 0.7,
+        top_p: 0.8, // if not set to 1, select tokens with probabilities adding up to less than this number. Higher value = higher range of possible random results.
         min_p: 0.2, // Tokens with probability smaller than `(min_p) * (probability of the most likely token)` are discarded. This is the same as top_a but without squaring the probability.
-        top_k: 1, // Similar to top_p, but select instead only the top_k most likely tokens. Higher value = higher range of possible random results.
+        top_k: 20, // Similar to top_p, but select instead only the top_k most likely tokens. Higher value = higher range of possible random results.
         typical_p: 1, // If not set to 1, select only tokens that are at least this much more likely to appear than random tokens, given the prior text.
         tfs: 0.5, // Tries to detect a tail of low-probability tokens in the distribution and removes those tokens. See this [blog post](https://www.trentonbricken.com/Tail-Free-Sampling/) for details. The closer to 0, the more discarded tokens.
         repetition_penalty: 1.1, // Penalty factor for repeating prior tokens. 1 means no penalty, higher value = less repetition, lower value = more repetition.
         frequency_penalty: 0.0, // Repetition penalty that scales based on how many times the token has appeared in the context. Be careful with this; there's no limit to how much a token can be penalized.
         presence_penalty: 0.0, // Similar to repetition_penalty, but with an additive offset on the raw token scores instead of a multiplicative factor. It may generate better results. 0 means no penalty, higher value = less repetition, lower value = more repetition. Previously called "additive_repetition_penalty".
-
-        // stop: ["</action>"],
 
         grammar_string: `
 # support deepseek r1 format (and compatible with other models), and then force the xml response payload:
@@ -244,7 +369,7 @@ root ::= (
 
 think-line ::= [^<]{25,100} "\\n"
 `,
-        ...(sessionDef.getApiParams?.(session.meta, session) ?? {}),
+        ...(sessionTypeDef.getApiParams?.(session.meta, session) ?? {}),
       }),
       headers: {
         'Content-Type': 'application/json',
@@ -257,7 +382,6 @@ think-line ::= [^<]{25,100} "\\n"
   refreshSessions();
 
   const message = parsed.choices[0].message;
-  // message.content += "</action>" // re-add since it's a stop word;
 
   const persistedMessage = {
     role: message.role,
@@ -314,32 +438,46 @@ think-line ::= [^<]{25,100} "\\n"
 
   let actions = persistedMessage.actions;
   let actionResults = persistedMessage.actionResults;
-  let speakResults = '';
 
   if (actionNodes[0].children.length > 1) {
     respondWithError('Multiple elements found inside <action />, only one item is allowed at a time');
     return;
   }
 
-  for (let i = 0; i < actionNodes.length; i++) {
-    const actionDef = actionNodeToObject(actionNodes[i]);
-    actions.push(actionDef);
+  let actionStopsSession = false;
+  try {
+    for (let i = 0; i < actionNodes.length; i++) {
+      const actionDef = actionNodeToObject(actionNodes[i]);
+      actions.push(actionDef);
 
-    if (actionDef.action === 'parsererror') {
-      respondWithError(xmldoc.documentElement.textContent);
-      return;
-    } else if (actionDef.action === 'speak') {
-      speakResults += actionDef.text + '\n';
-    } else if (actionDef.action === 'complete') {
-      speakResults += '-=: assistant has ended the conversation :=-'
-    } else {
-      try {
-        actionResults.push(await executeAction(session, actionDef));
-      } catch (e) {
-        console.error(e);
-        actionResults.push(`Error: ${e.message}`);
+      if (actionDef.action === 'parsererror') {
+        respondWithError(xmldoc.documentElement.textContent);
+        return;
+      } else if (actionDef.action === 'speak') {
+        // not a real action
+      } else if (actionDef.action === 'task.success' || actionDef.action === 'task.failure') {
+        actionStopsSession = true;
+        const sessionPromise = sessionPromises.get(session);
+        if (sessionPromise) {
+          if (actionDef.action === 'task.success') {
+            sessionPromise.resolve({ status: 'success', result: actionDef.text });
+          } else {
+            sessionPromise.resolve({ status: 'failed', result: actionDef.text });
+          }
+        }
+      } else {
+        try {
+          actionResults.push(await executeAction(session, actionDef));
+        } catch (e) {
+          console.error(e);
+          actionResults.push(`Error: ${e.message}`);
+        }
       }
     }
+  } catch (e) {
+    console.error(e);
+    respondWithError(`Error executing action: ${e.message}\n\nPlease reformat your XML and try again.`);
+    return;
   }
 
   session.messages.push(persistedMessage);
@@ -355,7 +493,9 @@ think-line ::= [^<]{25,100} "\\n"
       }
     );
   }
-  continueSession(session);
+  if (!actionStopsSession) {
+    continueSession(session);
+  }
 }
 
 function actionNodeToObject(node) {
