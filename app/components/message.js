@@ -121,7 +121,7 @@ registerComponent('l-message', ({ render, attributes }) => {
                     ${isExpanded.map(isExpanded => isExpanded ? element`<pre>${sanitize(JSON.stringify(args, null, 2))}\n\n${sanitize(actionResults[idx])}</pre>` : "")}
                   </div>
                 `;
-      })}
+      }) ?? element`<pre>${sanitize(content)}</pre>`}
             </div>`;
     })}
           </section>

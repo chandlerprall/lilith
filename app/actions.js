@@ -69,7 +69,14 @@ const actions = [
       const tmpFile = path.join(os.tmpdir(), '__lilith.js');
       writeFileSync(tmpFile, code);
       const { stdout, stderr } = await execAsync(`node ${tmpFile}`);
-      return `stdout\n----------\n${stdout}\nstderr\n----------\n${stderr}`;
+      return `
+<stdout><![CDATA[
+${stdout}
+]]></stdout>
+<stderr><![CDATA[
+${stderr}
+]]></stderr>
+`.trim();
     },
     definition: `<!-- text in the element body is executed in a nodejs shell, stdout and stderr are returned -->
 <!ELEMENT nodejs_runcode (#PCDATA)>`,
@@ -182,15 +189,10 @@ id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't 
 
         const newContents = [...fileContents.slice(0, startLine - 1), ...content.split('\n'), ...fileContents.slice(endLine)];
         writeFileSync(path, newContents.join('\n'));
-
-        // communicate the result, including the lines that were replaced +/- 5 lines on each side
-        const start = Math.max(0, startLine - 6);
-        const end = Math.min(fileContents.length, endLine + 5);
-        return `File written to ${path}\n\n${fileContents.slice(start, end).join('\n')}`;
       } else {
         writeFileSync(path, content);
-        return `File written to ${path}`;
       }
+      return `File written to ${path}`;
     },
     definition: `<!ELEMENT file.write (#PCDATA)> <!-- element body is written as the file contents -->
 <!ATTLIST file.write

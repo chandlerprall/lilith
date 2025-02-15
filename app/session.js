@@ -174,7 +174,9 @@ export const sessionDefinitions = [
     type: 'chat',
     configElement: ChatSessionConfig,
     getSystemMessage({ type: { who } }) {
-      return `You are a helpful assistant named ${who.name}.`;
+      return `You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+
+You must respond and act as if you are a person named ${who.name}: ${who.bio}`;
     }
   },
   {
@@ -470,9 +472,19 @@ think-line ::= [^<]{25,100} "\\n"
           actionResults.push(await executeAction(session, actionDef));
         } catch (e) {
           console.error(e);
-          actionResults.push(`Error: ${e.message}`);
+          actionResults.push(`<error><![CDATA[${e.message}]]></error>`);
         }
       }
+
+      // write results back into the message
+      //       persistedMessage.content = persistedMessage.content.replace(
+      //         /(<\/action>)$/,
+      //         `
+      //   <result><![CDATA[
+      // ${actionResults[0]}
+      //   ]]</result>
+      // $1`,
+      //       );
     }
   } catch (e) {
     console.error(e);
@@ -488,10 +500,20 @@ think-line ::= [^<]{25,100} "\\n"
     addMessageWithoutSending(
       session,
       {
-        role: 'user',
-        content: `action results\n----------\n${actionResults.join('\n----------\n')}`
+        role: 'assistant',
+        content: `  <result><![CDATA[
+${actionResults[0]}
+]]</result>`
       }
     );
+
+    // addMessageWithoutSending(
+    //   session,
+    //   {
+    //     role: 'user',
+    //     content: `action results\n----------\n${actionResults.join('\n----------\n')}`
+    //   }
+    // );
   }
   if (!actionStopsSession) {
     continueSession(session);
