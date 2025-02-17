@@ -1,5 +1,5 @@
 import { registerComponent, Signal } from '@venajs/core';
-import { activeSession, sessionDefinitions, startSession } from '../session.js';
+import { activeSession, continueSession, sessionDefinitions, startSession } from '../session.js';
 import { taskDefinitions } from '../tasks.js';
 
 registerComponent('l-newchat', ({ render, refs, emit }) => {
@@ -16,6 +16,8 @@ registerComponent('l-newchat', ({ render, refs, emit }) => {
     activeSession.value = newSession;
 
     emit('create', newSession);
+
+    continueSession(newSession);
   }
 
   function rerender() {

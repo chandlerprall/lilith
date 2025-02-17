@@ -80,7 +80,14 @@ export const executeCommand = async (session, id, command) => {
   process.stdout.off('data', outCollector);
   process.stderr.off('data', errCollector);
 
-  return `stdout\n-----\n${stdout}\nstderr\n-----\n${stderr}`;
+  return `
+  <stdout><![CDATA[
+${stdout}
+  ]]></stdout>
+  <stderr><![CDATA[
+${stderr}
+  ]]></stderr>
+  `.trim();
 }
 
 export const readTerminal = (session, id, lineCount) => {

@@ -1,6 +1,6 @@
 import { registerComponent, Signal } from "@venajs/core";
 import project, { sessions } from "./project.js";
-import { executeAction, getActionsContext } from "./actions.js";
+import { executeAction, getActionNames, getActionsContext } from "./actions.js";
 import { taskDefinitions } from "./tasks.js";
 
 const sessionPromises = new Map();
@@ -157,9 +157,17 @@ If you cannot fulfill the task for any reason, use the \`task.failure\` action a
 
 # Messages
 
-## Format
+${(session.meta.type.type === 'pairing' && session.messages.at(-1)?.role === 'assistant')
+      ? `${session.meta.type.executor.name} responds with thoughts and an xml-formatted message. You, however, are ${session.meta.type.pairer.name} and are including only your spoken responses.
+      
+This is a very important distinction, as the pairing person in this session, you can not take any actions, instead discussing potential actions with the other person before letting them perform it.
+      
+The person does not work in a GUI environment; the actions available to them are: ${getActionNames()}`
 
-${getActionsContext()}
+      : `## Format
+
+${getActionsContext()}`
+    }
 
 ## Content
 
@@ -173,18 +181,65 @@ export const sessionDefinitions = [
   {
     type: 'chat',
     configElement: ChatSessionConfig,
-    getSystemMessage({ type: { who } }) {
+    getSystemMessage(meta) {
+      const { type: { who } } = meta;
       return `You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
-
-You must respond and act as if you are a person named ${who.name}: ${who.bio}`;
+  
+  You must respond and act as if you are a person named ${who.name}: ${who.bio}`;
     }
   },
   {
     type: 'pairing',
     configElement: PairingSessionConfig,
-    getSystemMessage({ type: { executor, pairer } }) {
-      return `You are a helpful assistant named ${executor.name} and you are paired with ${pairer.name}.`;
-    }
+    getSystemMessage({ type: { executor, pairer } }, session) {
+      if (session?.messages?.at(-1)?.role === 'assistant') {
+        return `You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+  
+You must respond and act as if you are a person named ${pairer.name}: ${pairer.bio}`;
+      } else {
+        return `You are Qwen, created by Alibaba Cloud. You are a helpful assistant.
+  
+You must respond and act as if you are a person named ${executor.name}: ${executor.bio}`;
+      }
+    },
+    getApiParams(session) {
+      if (session.messages.at(-1)?.role === 'assistant') {
+        // next message is from the user, remove the grammar
+        return {
+          grammar_string: undefined,
+        };
+      }
+
+      return {};
+    },
+    preprocessMessages(session) {
+      let { messages } = session;
+
+      const initials = getInitialMessages(session.meta, session);
+      messages.splice(0, initials.length, ...initials);
+
+      // if the last message is from the user, don't swap the roles
+      // else, swap the roles to make the assistant the user and vice versa
+
+      if (messages.at(-1)?.role === 'user') {
+        return messages;
+      }
+
+      return structuredClone(messages).map(message => {
+        if (message.role === 'assistant') {
+          message.role = 'user';
+        } else if (message.role === 'user') {
+          message.role = 'assistant';
+        }
+        return message;
+      });
+    },
+    postprocessMessage(message, session) {
+      return {
+        ...message,
+        role: session.messages.at(-1)?.role === 'assistant' ? 'user' : 'assistant',
+      };
+    },
   },
 ];
 
@@ -215,8 +270,6 @@ class ExternallyResolvablePromise {
   }
 }
 export const startSession = ({ parent = null, task, type }) => {
-  const typeDef = sessionDefinitions.find(def => def.type === type.type);
-
   const meta = {
     parent,
     task,
@@ -225,10 +278,10 @@ export const startSession = ({ parent = null, task, type }) => {
 
   const session = {
     meta,
-    messages: getInitialMessages(typeDef.getSystemMessage(meta)),
+    messages: getInitialMessages(meta),
 
     busy: false,
-    autorun: type.type !== 'chat',
+    autorun: false, //type.type !== 'chat',
     tokensUsed: null,
   };
 
@@ -255,12 +308,14 @@ export const continueSession = (session, message, forceSend) => {
 
   if (session.autorun || forceSend) {
     sendMessages(session);
+  } else {
+    session.busy = false;
+    refreshSessions();
   }
 }
 
 export const resetSession = (session) => {
-  const sessionDef = sessionDefinitions.find(sessionDef => sessionDef.type === session.meta.type.type);
-  session.messages = getInitialMessages(sessionDef.getSystemMessage(session.meta));
+  session.messages = getInitialMessages(session.meta, session);
   session.busy = false;
   refreshSessions();
 }
@@ -278,7 +333,10 @@ export const closeSession = (session) => {
   }
 }
 
-function getInitialMessages(systemMessage) {
+function getInitialMessages(meta, session) {
+  const typeDef = sessionDefinitions.find(def => def.type === meta.type.type);
+  const systemMessage = typeDef.getSystemMessage(meta, session);
+
   const messages = [];
 
   if (systemMessage) messages.push({ role: 'system', content: systemMessage });
@@ -288,7 +346,7 @@ function getInitialMessages(systemMessage) {
     content: `<think>Normally I would look back at the previous messages and reasons, determine the necessary action here, and anticipate future ones. However, this is the beginning of the conversation and there is no history to look at. I want to appear helpful and friendly, so I'll just ask how I can help.</think>
 <?xml version="1.0" encoding="UTF-8"?>
 <action reason="I want to provide a helpful response">
-  <speak>How can I help today?</speak>
+<speak>How can I help today?</speak>
 </action>`,
     actions: [
       {
@@ -301,8 +359,21 @@ function getInitialMessages(systemMessage) {
     actionResults: []
   });
 
+  if (meta.type.type === 'pairing') {
+    if (meta.task.type === 'freeform') {
+      messages.push({
+        role: 'user',
+        content: `Hi! I guess we should get started on our task. I'll repeat its details here:\n${meta.task?.title}\n---\n${meta.task?.description}`
+      });
+    }
+  }
+
   return messages;
 }
+
+const flipRole = (role => role === 'user' ? 'assistant' : 'user');
+
+const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 const parser = new DOMParser();
 const sendMessages = async (session) => {
@@ -311,6 +382,8 @@ const sendMessages = async (session) => {
 
   const sessionTaskDef = taskDefinitions.find(def => def.type === session.meta.task.type);
   const sessionTypeDef = sessionDefinitions.find(def => def.type === session.meta.type.type);
+
+  await wait(250); // immediate auto-responses seem to hang the server
 
   /*
   tensorcors and flash attention tracking
@@ -326,6 +399,8 @@ const sendMessages = async (session) => {
 
   */
 
+  const messages = sessionTypeDef?.preprocessMessages?.(session) ?? session.messages;
+
   const response = await fetch(
     'http://10.0.0.77:5000/v1/chat/completions',
     {
@@ -334,18 +409,28 @@ const sendMessages = async (session) => {
         // https://github.com/oobabooga/text-generation-webui/blob/main/extensions/openai/typing.py#L55
         mode: "chat-instruct",
         context: getContext(session),
-        messages: session.messages,
+        messages,
         max_tokens: 4096,
+        temperature: 0.6,
+        top_p: 1, // if not set to 1, select tokens with probabilities adding up to less than this number. Higher value = higher range of possible random results.
+        min_p: 0.2, // Tokens with probability smaller than `(min_p) * (probability of the most likely token)` are discarded. This is the same as top_a but without squaring the probability.
+        top_k: 1, // Similar to top_p, but select instead only the top_k most likely tokens. Higher value = higher range of possible random results.
+        typical_p: 1, // If not set to 1, select only tokens that are at least this much more likely to appear than random tokens, given the prior text.
+        tfs: 0.5, // Tries to detect a tail of low-probability tokens in the distribution and removes those tokens. See this [blog post](https://www.trentonbricken.com/Tail-Free-Sampling/) for details. The closer to 0, the more discarded tokens.
+        repetition_penalty: 1.1, // Penalty factor for repeating prior tokens. 1 means no penalty, higher value = less repetition, lower value = more repetition.
+        frequency_penalty: 0.0, // Repetition penalty that scales based on how many times the token has appeared in the context. Be careful with this; there's no limit to how much a token can be penalized.
+        presence_penalty: 0.0, // Similar to repetition_penalty, but with an additive offset on the raw token scores instead of a multiplicative factor. It may generate better results. 0 means no penalty, higher value = less repetition, lower value = more repetition. Previously called "additive_repetition_penalty".
+        /*
         temperature: 0.7,
         top_p: 0.8, // if not set to 1, select tokens with probabilities adding up to less than this number. Higher value = higher range of possible random results.
-        min_p: 0.2, // Tokens with probability smaller than `(min_p) * (probability of the most likely token)` are discarded. This is the same as top_a but without squaring the probability.
+        min_p: 0.5, // Tokens with probability smaller than `(min_p) * (probability of the most likely token)` are discarded. This is the same as top_a but without squaring the probability.
         top_k: 20, // Similar to top_p, but select instead only the top_k most likely tokens. Higher value = higher range of possible random results.
         typical_p: 1, // If not set to 1, select only tokens that are at least this much more likely to appear than random tokens, given the prior text.
         tfs: 0.5, // Tries to detect a tail of low-probability tokens in the distribution and removes those tokens. See this [blog post](https://www.trentonbricken.com/Tail-Free-Sampling/) for details. The closer to 0, the more discarded tokens.
         repetition_penalty: 1.1, // Penalty factor for repeating prior tokens. 1 means no penalty, higher value = less repetition, lower value = more repetition.
         frequency_penalty: 0.0, // Repetition penalty that scales based on how many times the token has appeared in the context. Be careful with this; there's no limit to how much a token can be penalized.
         presence_penalty: 0.0, // Similar to repetition_penalty, but with an additive offset on the raw token scores instead of a multiplicative factor. It may generate better results. 0 means no penalty, higher value = less repetition, lower value = more repetition. Previously called "additive_repetition_penalty".
-
+        */
         grammar_string: `
 # support deepseek r1 format (and compatible with other models), and then force the xml response payload:
 # <think>...</think>
@@ -371,7 +456,7 @@ root ::= (
 
 think-line ::= [^<]{25,100} "\\n"
 `,
-        ...(sessionTypeDef.getApiParams?.(session.meta, session) ?? {}),
+        ...(sessionTypeDef.getApiParams?.(session) ?? {}),
       }),
       headers: {
         'Content-Type': 'application/json',
@@ -383,7 +468,16 @@ think-line ::= [^<]{25,100} "\\n"
   session.tokensUsed = parsed.usage.total_tokens;
   refreshSessions();
 
-  const message = parsed.choices[0].message;
+  const message = sessionTypeDef.postprocessMessage?.(parsed.choices[0].message, session) ?? parsed.choices[0].message;
+
+  if (session.meta.type.type === 'pairing' && session.messages.at(-1)?.role === 'assistant') {
+    session.messages.push(message);
+    session.busy = false;
+    refreshSessions();
+
+    continueSession(session);
+    return;
+  }
 
   const persistedMessage = {
     role: message.role,
@@ -395,7 +489,7 @@ think-line ::= [^<]{25,100} "\\n"
 
   function respondWithError(msg) {
     addMessageWithoutSending(session, persistedMessage);
-    continueSession(session, { role: 'user', content: msg }, true /* force it to send */);
+    continueSession(session, { role: flipRole(persistedMessage.role), content: msg });
   }
 
   // match two groups: think and xml
@@ -500,20 +594,12 @@ think-line ::= [^<]{25,100} "\\n"
     addMessageWithoutSending(
       session,
       {
-        role: 'assistant',
+        role: persistedMessage.role,
         content: `  <result><![CDATA[
 ${actionResults[0]}
 ]]</result>`
       }
     );
-
-    // addMessageWithoutSending(
-    //   session,
-    //   {
-    //     role: 'user',
-    //     content: `action results\n----------\n${actionResults.join('\n----------\n')}`
-    //   }
-    // );
   }
   if (!actionStopsSession) {
     continueSession(session);

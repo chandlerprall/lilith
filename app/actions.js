@@ -13,17 +13,16 @@ const actions = [
   {
     action: 'task.start',
     async handler(session, { title }, description) {
+      if (!title) {
+        throw new Error("task.start requires a title");
+      }
+
       const newSession = startSession({
         parent: session,
         task: { type: 'freeform', title, description },
         type: structuredClone(session.meta.type)
       });
       newSession.autorun = session.autorun; // inherit autorun
-      newSession.messages.length = 1; // keep only the system message
-      newSession.messages.push({
-        role: 'user',
-        content: 'Start on the current task. First, decide if you can resolve the task immediately or if you will be creating sub tasks. As a reminder, only lengthy tasks should be broken into sub tasks.',
-      })
 
       continueSession(newSession, undefined, true);
       activeSession.value = newSession;
@@ -320,7 +319,7 @@ path CDATA #REQUIRED <!-- absolute path to the file -->
   },
 ];
 
-export const getActionNames = (definedActions) => {
+export const getActionNames = (definedActions = actions) => {
   return definedActions.map(action => action.action).join(' | ');
 }
 
@@ -348,7 +347,7 @@ export const getActionsContext = (definedActions = actions) => {
 More formally, the document follows this definition:
   
 \`\`\`dtd
-<!ELEMENT action (${getActionNames(definedActions)})>
+<!ELEMENT action (${getActionNames()})>
 <!ATTLIST action
   reason CDATA #REQUIRED <!-- describe why you are taking this action -->
 >
