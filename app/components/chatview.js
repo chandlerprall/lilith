@@ -13,6 +13,14 @@ function refreshSessions() {
 }
 
 registerComponent('l-chatview', ({ render, element: me }) => {
+  function scrollMessages() {
+    setTimeout(() => {
+      me.shadowRoot.getElementById('messages').scrollBy(0, Number.MAX_SAFE_INTEGER);
+    });
+  }
+  activeSession.on(scrollMessages);
+  scrollMessages();
+
   const handleMessageKeyDown = (event) => {
     if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
       const msgEl = me.shadowRoot.querySelector('#message');
