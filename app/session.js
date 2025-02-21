@@ -1,7 +1,8 @@
 import { registerComponent, Signal } from "@venajs/core";
-import project, { sessions } from "./project.js";
+import project, { getSessionById, sessions } from "./project.js";
 import { executeAction, getActionsContext } from "./actions.js";
 import { taskDefinitions } from "./tasks.js";
+import { getId } from "./utils/id.js";
 
 const sessionPromises = new Map();
 
@@ -74,10 +75,10 @@ function getTaskTitle(session) {
 
 function getTaskContext(session) {
   let parentStack = [];
-  let parent = session.meta.parent;
+  let parent = getSessionById(session.meta.parent);
   while (parent) {
     parentStack.unshift(getTaskTitle(parent));
-    parent = parent.meta.parent;
+    parent = getSessionById(parent.meta.parent);
   }
 
   const parentInfo = parentStack.length ? `## Parent tasks\n\n${parentStack.map(x => `* ${x}`).join('\n')}` : '';
@@ -387,6 +388,9 @@ class ExternallyResolvablePromise {
   }
 }
 export const startSession = async ({ parent = null, task, type }) => {
+  const existingIds = new Set(sessions.value.map(issue => issue.id));
+  const id = getId(existingIds);
+
   const meta = {
     parent,
     task,
@@ -394,6 +398,7 @@ export const startSession = async ({ parent = null, task, type }) => {
   };
 
   const session = {
+    id,
     meta,
     messages: getInitialMessages(meta),
 

@@ -10,6 +10,8 @@ project.issues = new ProxySignal(project.issues);
 export const sessions = new ProxySignal(project.sessions);
 sessions.on(writeProject);
 
+export const getSessionById = id => sessions.value.find(session => session.id === id);
+
 export default project
 
 export const writeIssue = (name, definition) => {

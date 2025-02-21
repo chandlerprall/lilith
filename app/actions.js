@@ -36,7 +36,7 @@ const actions = [
           description,
         };
       const newSession = await startSession({
-        parent: session,
+        parent: session.id,
         task: newTask,
         type: structuredClone(session.meta.type)
       });
@@ -46,7 +46,7 @@ const actions = [
       continueSession(newSession, {
         role: session.messages.at(-1)?.role === 'assistant' ? 'user' : 'assistant',
         content: `New task "${title}" started, with instructions:\n---\n${description}\n---\nRemember to complete only this task, starting new tasks only as required to finish it.`,
-      }, true);
+      });
       activeSession.value = newSession;
       const { status, result } = await awaitSession(newSession);
       activeSession.value = session;
