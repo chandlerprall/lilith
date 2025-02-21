@@ -80,12 +80,12 @@ registerComponent('l-message', ({ render, attributes }) => {
       return "";
     }
 
-    if (role === 'user') {
-      return element`<section>
-          <strong onclick=${() => debugging.value = !debugging.value}>${role}</strong>
-          <pre class="lineWrap">${sanitize(content)}</pre>
-        </section>`;
-    }
+    // if (role === 'user') {
+    //   return element`<section>
+    //       <strong onclick=${() => debugging.value = !debugging.value}>${role}</strong>
+    //       <pre class="lineWrap">${sanitize(content)}</pre>
+    //     </section>`;
+    // }
 
     const isThinkExpanded = new Signal(false);
 
@@ -100,7 +100,7 @@ registerComponent('l-message', ({ render, attributes }) => {
       const spokenWords = actions?.filter(action => action.action === 'speak').map(action => action.text).join('\n');
       const remainingActions = actions?.filter(action => action.action !== 'speak');
 
-      const taskResult = actions?.[0]?.action === 'task.success' || actions?.[0]?.action === 'task.failure' ? element`<pre>${actions?.[0].text}</span>` : "";
+      const taskResult = actions?.[0]?.action === 'task.success' || actions?.[0]?.action === 'task.failure' ? element`<pre>${sanitize(actions?.[0].text)}</span>` : "";
 
       return element`<div>
                 <pre class="think" data-open=${isThinkExpanded} onclick=${() => isThinkExpanded.value = !isThinkExpanded.value}>${sanitize(think)}</pre>

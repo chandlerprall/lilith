@@ -9,10 +9,10 @@ registerComponent('l-newchat', ({ render, refs, emit }) => {
   configureElement.on(rerender);
   rerender();
 
-  function triggerSession() {
+  async function triggerSession() {
     const task = refs.taskSelection.value;
     const type = refs.selection.value;
-    const newSession = startSession({ task, type });
+    const newSession = await startSession({ task, type });
     activeSession.value = newSession;
 
     emit('create', newSession);

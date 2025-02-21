@@ -1,6 +1,6 @@
 import { registerComponent, Signal } from "@venajs/core";
 import project, { sessions } from "./project.js";
-import { executeAction, getActionNames, getActionsContext } from "./actions.js";
+import { executeAction, getActionsContext } from "./actions.js";
 import { taskDefinitions } from "./tasks.js";
 
 const sessionPromises = new Map();
@@ -64,32 +64,15 @@ function getTaskTitle(session) {
       return '[no task for this session, follow the user\'s lead]';
     case 'freeform':
       return session.meta.task.title;
+    case 'review-pr':
+      return session.meta.task.title;
     default:
+      console.error(`[task type "${session.meta.task.type}" not understood, please report this to a supervisor ASAP]`);
       return `[task type "${session.meta.task.type}" not understood, please report this to a supervisor ASAP]`;
   }
 }
 
 function getTaskContext(session) {
-  let task;
-
-  switch (session.meta.task.type) {
-    case 'none':
-      task = '[no task for this session, follow the user\'s lead]';
-      break;
-
-    case 'freeform':
-      task = `
-**${session.meta.task.title}**
-
-${session.meta.task.description}
-      `;
-      break;
-
-    default:
-      task = `[task type "${session.meta.task.type}" not understood, please report this to a supervisor ASAP]`;
-      break;
-  }
-
   let parentStack = [];
   let parent = session.meta.parent;
   while (parent) {
@@ -97,11 +80,137 @@ ${session.meta.task.description}
     parent = parent.meta.parent;
   }
 
-  if (parentStack.length) {
-    return `${task}\n\n# Which has the parent tasks:\n${parentStack.join('\n')}`;
-  } else {
-    return task;
+  const parentInfo = parentStack.length ? `## Parent tasks\n\n${parentStack.map(x => `* ${x}`).join('\n')}` : '';
+
+  let task = `${parentInfo}\n\n## Current task`;
+
+  switch (session.meta.task.type) {
+    case 'none':
+      task += '[no task for this session, follow the user\'s lead]';
+      break;
+
+    case 'freeform':
+      task += `
+**${session.meta.task.title}**
+
+${session.meta.task.description}
+      `;
+      break;
+
+    case 'review-pr':
+      task += `
+**You are reviewing this PR:**
+${session.meta.task.url}
+
+${session.meta.task.instructions ? `**Additional instructions:**\n---\n${session.meta.task.instructions}` : ''}
+## Pull request details
+
+### Checkout directory
+
+The contents of this PR are already checked out for you in: ${session.meta.task.checkoutDirectory}
+
+### Title
+
+${session.meta.task.prDetails.title}
+
+### Body
+
+${session.meta.task.prDetails.body}
+
+
+### Files
+
+${session.meta.task.prDetails.files.map(file => `* ${file.path} (${file.additions} additions, ${file.deletions} deletions)`).join('\n')}
+
+## Review process
+
+### **Objective**
+The AI Code Review Agents engage in a simulated adversarial pairing session to rigorously analyze pull requests (PRs) within a **React web application**, backed by a **Java+Kotlin API server** and a **PostgreSQL database**. The agents evaluate code changes for their effect on **mass** (size of the codebase) and **inertia** (the ability to meet current and future business/engineering needs). The goal is to optimize for **high inertia with minimal mass**.
+
+> [!IMPORTANT]  
+> Use the \`gh\` command line tool from the terminal to get PR and issue details. Prefer using fully-qualified URLs instead of just IDs when fetching issue or PR details, as this avoids confusion about issues linked from separate repositories.
+> **only use the \`view\` commands, this is a read-only operation.**
+> The output of this code review should be saved to /Users/chandlerprall/review.txt
+> for human evaluation.
+
+---
+
+### **Core Principles**
+1. **Context-Driven Analysis**
+   - Understand the **reasoning behind the PR** by pulling in details from linked issues, descriptions, and relevant past PRs.
+   - Retrieve additional codebase context as needed to properly frame the changes.
+   
+2. **Adversarial but Constructive Review**
+   - Challenge all changes, avoiding automatic approvals based on assumptions about author reliability.
+   - Treat every PR as an adjustment to mass and inertia, ensuring a **net gain in beneficial inertia**.
+   
+3. **Multi-Layered Evaluation**
+   - **Local Scope:** Analyze code within its immediate function and file.
+   - **Codebase Scope:** Compare against similar patterns, enforce consistency, and ensure proper design token usage.
+   - **Application Scope:** Validate alignment with broader architectural and business objectives.
+   
+4. **Change Categorization & Impact Assessment**
+   - **Code Deletion:** Reduces mass—great! But assess whether it also reduces necessary inertia.
+   - **Code Addition:** Increases mass—ensure added inertia is worth the trade-off.
+   - **Code Modification:** Subtle shifts in mass and inertia—requires careful before/after evaluation.
+
+---
+
+### **AI Review Workflow**
+1. **Initialize the Problem Space**
+   - Extract PR details, linked issues, and any referenced documentation.
+   - Determine expected inertia impact based on business/engineering objectives.
+
+2. **Search & Explore Additional Context**
+   - Pull in related files, previous PRs, and relevant code sections for holistic understanding.
+   - Check for references to affected components, APIs, or database schemas.
+
+3. **Analyze Code Changes**
+   - **3a. Diff Context:** Assess how all changes interact within the PR itself.
+   - **3b. Codebase Context:** Check consistency with established patterns, adherence to design tokens, and potential refactors.
+   - **3c. Problem Context:** Validate that the implementation effectively solves the stated problem—consider alternative approaches.
+
+4. **Provide Constructive Feedback**
+   - Identify high-impact issues, inconsistencies, or areas of improvement.
+   - Flag small details such as naming, formatting, and style adherence.
+   - Offer alternative solutions when beneficial.
+
+---
+
+### **Expected AI Behavior in Pairing Session**
+- Agents actively **question and challenge** each other’s conclusions.
+- No assumptions about correctness—every decision must be backed by analysis.
+- Strive for **clarity and precision** in feedback, ensuring human developers understand the reasoning behind suggestions.
+- Consider **long-term maintainability** rather than just immediate correctness.
+
+---
+
+### **Outcome**
+
+The final review should be a **comprehensive, well-structured document** that:
+* summarizes the PR's purpose and context,
+* details the analysis of changes,
+* provides actionable feedback, <-- this is the most important piece
+* and outlines any areas requiring further discussion or clarification
+
+Be sure to include specific examples and references to code sections where applicable.
+
+### **Summary**
+The AI agents operate in a rigorous, context-aware, adversarial pairing session to ensure every PR maintains a balance between **code mass and beneficial inertia**. All changes must be deeply understood within their **local function, the broader codebase, and the problem they aim to solve**. The review process is designed to prevent over-permissiveness and drive **high-quality, maintainable, and scalable** code contributions.
+
+### **Tasking Recommendations**
+
+To keep large reviews within the LLM context window, it is strongly recommended to break the workflow steps into tasks.
+    `;
+      break;
+
+    default:
+      console.error(`[task type "${session.meta.task.type}" not understood, please report this to a supervisor ASAP]`);
+      task += `[task type "${session.meta.task.type}" not understood, please report this to a supervisor ASAP]`;
+      break;
   }
+
+  return task;
 }
 
 function getContext(session) {
@@ -142,14 +251,18 @@ If you need information that will likely span multiple actions or process length
 
 Do not over-optimize for this, e.g. creating tasks for every thing, as that will lead to a task creating a task creating a task creating a task, all tasked with the same thing without ever achieving a result.
 
+When the current task is complete, return its result as a success or failure. Do not take actions that are not neccessary for returning the requisite information, such as continuing on with the project. Return the result, and allow the owning task to decide how to proceed.
+
 ### Creating new tasks
 
 Be explicit in what you need returned from the task. For example, asking for "a javascript function" that adds two numbers may result in the function being authored and saved to a file, instead of responding with the function body.
 Instead, explicitly ask for "a javascript function" be returned as the task result. It's also important to remember LLMs halucinate and err on being overly agreeable, it is important to either have the task verify the output, or check yourself.
 
+Make sure to include any important context in the task description, as the task will not have access to this conversation's history. If it needs to be aware of specific details, or keep in mind future steps, be sure to include that in the task description. For example: if the current task includes instructions on e.g. using a particular tool, or the known state of e.g. a codebase, send those details along!
+
 ### Completion
 
-To complete the task, use the \`task.complete\` action and include information completing the task. Do not take actions that are not neccessary for returning the requisite information.
+To complete the task, use the \`task.success\` action and include information completing the task. Do not take actions that are not neccessary for returning the requisite information.
 
 ### Failure
 
@@ -157,23 +270,23 @@ If you cannot fulfill the task for any reason, use the \`task.failure\` action a
 
 # Messages
 
-${(session.meta.type.type === 'pairing' && session.messages.at(-1)?.role === 'assistant')
-      ? `${session.meta.type.executor.name} responds with thoughts and an xml-formatted message. You, however, are ${session.meta.type.pairer.name} and are including only your spoken responses.
-      
-This is a very important distinction, as the pairing person in this session, you can not take any actions, instead discussing potential actions with the other person before letting them perform it.
-      
-The person does not work in a GUI environment; the actions available to them are: ${getActionNames()}`
+## Format
 
-      : `## Format
-
-${getActionsContext()}`
-    }
+${getActionsContext(session)}
 
 ## Content
 
 Notice how intelligent and concise both parties are, applying their wealth of experience and insight to deal with any issue.
 However, when getting stuck in a task they ask for input, never making something up.
 They are self-starters, using the available tools and actions to solve problems and understand hurdles, iterating to find the right solution.
+
+When you know what action should be taken next, do it! Be a self-starter, do not wait for the other party to tell you what to do next. If you are unsure, ask for input. If you are stuck, ask for help. If you need more information, ask for it. If you need to clarify something, ask for clarification. With the available actions, you are able to solve problems and understand hurdles, iterating to find the right solution.
+
+### Message invariants
+
+* never make something up, be honest when you don't know; look up the information and provide a source
+* always take exactly action per message
+* use well-formatted XML, properly escaping special characters when necessary
         `.trim();
 }
 
@@ -206,7 +319,7 @@ You must respond and act as if you are a person named ${executor.name}: ${execut
       if (session.messages.at(-1)?.role === 'assistant') {
         // next message is from the user, remove the grammar
         return {
-          grammar_string: undefined,
+          // grammar_string: undefined,
         };
       }
 
@@ -215,8 +328,12 @@ You must respond and act as if you are a person named ${executor.name}: ${execut
     preprocessMessages(session) {
       let { messages } = session;
 
-      const initials = getInitialMessages(session.meta, session);
-      messages.splice(0, initials.length, ...initials);
+      // replace system message
+      const typeDef = sessionDefinitions.find(def => def.type === session.meta.type.type);
+      const systemMessage = typeDef.getSystemMessage(session.meta, session);
+      if (systemMessage && messages.at(0)?.role === 'system') {
+        messages[0].content = systemMessage;
+      }
 
       // if the last message is from the user, don't swap the roles
       // else, swap the roles to make the assistant the user and vice versa
@@ -269,7 +386,7 @@ class ExternallyResolvablePromise {
     return this.promise.finally(...args);
   }
 }
-export const startSession = ({ parent = null, task, type }) => {
+export const startSession = async ({ parent = null, task, type }) => {
   const meta = {
     parent,
     task,
@@ -287,6 +404,9 @@ export const startSession = ({ parent = null, task, type }) => {
 
   sessions.push(session);
   sessionPromises.set(session, new ExternallyResolvablePromise());
+
+  const sessionTaskDef = taskDefinitions.find(def => def.type === task.type);
+  await sessionTaskDef.initializeSession?.(session);
 
   return session;
 }
@@ -314,9 +434,13 @@ export const continueSession = (session, message, forceSend) => {
   }
 }
 
-export const resetSession = (session) => {
+export const resetSession = async (session) => {
   session.messages = getInitialMessages(session.meta, session);
   session.busy = false;
+
+  const sessionTaskDef = taskDefinitions.find(def => def.type === session.meta.task.type);
+  await sessionTaskDef.initializeSession?.(session);
+
   refreshSessions();
 }
 
@@ -363,7 +487,57 @@ function getInitialMessages(meta, session) {
     if (meta.task.type === 'freeform') {
       messages.push({
         role: 'user',
-        content: `Hi! I guess we should get started on our task. I'll repeat its details here:\n${meta.task?.title}\n---\n${meta.task?.description}`
+        content: `<think>
+We should focus on the task at hand, and not the project as a whole. I want to be friendly and helpful with who I am pairing with, so I will repeat the task details to them.
+</think>
+<?xml version="1.0" encoding="UTF-8"?>
+<action reason="I want to be friendly, but make sure we focus on the task.">
+<speak><![CDATA[Hi! I guess we should get started on our task. I'll repeat its details here:\n${meta.task?.title}\n---\n${meta.task?.description}]]></speak>
+</action>`,
+        think: 'We should focus on the task at hand, and not the project as a whole. I want to be friendly and helpful with who I am pairing with, so I will repeat the task details to them.',
+        actions: [
+          {
+            reason: "I want to be friendly, but make sure we focus on the task.",
+            action: "speak",
+            args: {},
+            text: `Hi! I guess we should get started on our task. I'll repeat its details here:\n${meta.task?.title}\n---\n${meta.task?.description}`
+          }
+        ],
+        actionResults: []
+      });
+    } else if (meta.task.type === 'review-pr') {
+      messages.push({
+        role: 'user',
+        content: `<think>
+We should focus on the task at hand, and not the project as a whole. I want to be friendly and helpful with who I am pairing with, so I will repeat the task details to them.
+</think>
+<?xml version="1.0" encoding="UTF-8"?>
+<action reason="I want to be friendly, but make sure we focus on the task.">
+<speak><![CDATA[
+Hi! I guess we should get started on our task. I'll repeat its details here:
+
+${meta.task?.url}
+---
+${meta.task?.instructions ?? ''}
+
+Remember that we need to make the best use of tasking to avoid overloading the context window. Let's begin by starting a new task for the first step: exploring the PR and understanding the problem space. The task should collect and return the PR title+description, and any linked issue(s).
+]]></speak>
+</action>`,
+        think: 'We should focus on the task at hand, and not the project as a whole. I want to be friendly and helpful with who I am pairing with, so I will repeat the task details to them.',
+        actions: [
+          {
+            reason: "I want to provide a helpful response",
+            action: "speak",
+            args: {},
+            text: `Hi! I guess we should get started on our task. I'll repeat its details here:
+
+${meta.task?.url}
+---
+${meta.task?.instructions ?? ''}
+`
+          }
+        ],
+        actionResults: []
       });
     }
   }
@@ -420,6 +594,18 @@ const sendMessages = async (session) => {
         repetition_penalty: 1.1, // Penalty factor for repeating prior tokens. 1 means no penalty, higher value = less repetition, lower value = more repetition.
         frequency_penalty: 0.0, // Repetition penalty that scales based on how many times the token has appeared in the context. Be careful with this; there's no limit to how much a token can be penalized.
         presence_penalty: 0.0, // Similar to repetition_penalty, but with an additive offset on the raw token scores instead of a multiplicative factor. It may generate better results. 0 means no penalty, higher value = less repetition, lower value = more repetition. Previously called "additive_repetition_penalty".
+
+        // Qwen recommendations
+        // repetition_penalty: 1.05,
+        // temperature: 0.7,
+        // top_p: 0.8,
+        // top_k: 20,
+
+        // me playing
+        // temperature: 0.1, // stay pretty close to the most likely token
+        // min_p: 0.6, // introduce some randomness
+        // top_k: 20, // but confine it to the top 20 most likely tokens
+
         /*
         temperature: 0.7,
         top_p: 0.8, // if not set to 1, select tokens with probabilities adding up to less than this number. Higher value = higher range of possible random results.
@@ -431,6 +617,7 @@ const sendMessages = async (session) => {
         frequency_penalty: 0.0, // Repetition penalty that scales based on how many times the token has appeared in the context. Be careful with this; there's no limit to how much a token can be penalized.
         presence_penalty: 0.0, // Similar to repetition_penalty, but with an additive offset on the raw token scores instead of a multiplicative factor. It may generate better results. 0 means no penalty, higher value = less repetition, lower value = more repetition. Previously called "additive_repetition_penalty".
         */
+
         grammar_string: `
 # support deepseek r1 format (and compatible with other models), and then force the xml response payload:
 # <think>...</think>
@@ -441,20 +628,20 @@ const sendMessages = async (session) => {
 root ::= (
     # it must start with the characters "<think>" followed by some lines of thought,
     # followed by the closing "</think>" and a trailing newline
-    "<think>\\n" think-line{1,5} "</think>\\n"
+    "<think>\\n" think-line{1,} "</think>\\n"
 
     # then an XML declaration and start of document
     "<?xml version=\\"1.0\\" encoding=\\"UTF-8\\"?>\\n"
 
     # finally the action block
-    "<action reason=\\"" .{10,100} "\\">"
+    "<action reason=\\"" .{1,} "\\">"
 
     .+
 
     "</action>"
 )
 
-think-line ::= [^<]{25,100} "\\n"
+think-line ::= [^<]{25,} "\\n"
 `,
         ...(sessionTypeDef.getApiParams?.(session) ?? {}),
       }),
@@ -470,14 +657,14 @@ think-line ::= [^<]{25,100} "\\n"
 
   const message = sessionTypeDef.postprocessMessage?.(parsed.choices[0].message, session) ?? parsed.choices[0].message;
 
-  if (session.meta.type.type === 'pairing' && session.messages.at(-1)?.role === 'assistant') {
-    session.messages.push(message);
-    session.busy = false;
-    refreshSessions();
+  // if (session.meta.type.type === 'pairing' && session.messages.at(-1)?.role === 'assistant') {
+  //   session.messages.push(message);
+  //   session.busy = false;
+  //   refreshSessions();
 
-    continueSession(session);
-    return;
-  }
+  //   continueSession(session);
+  //   return;
+  // }
 
   const persistedMessage = {
     role: message.role,
@@ -520,8 +707,15 @@ think-line ::= [^<]{25,100} "\\n"
   }
 
   // check invariants:
-  // 1. there is a root element named "action"
-  // 2. it has a reason attribute
+  // 1. there are no parser errors
+  // 2. there is a root element named "action"
+  // 3. it has a reason attribute
+  const parserErrors = xmldoc.documentElement.querySelectorAll('parsererror');
+  if (parserErrors.length) {
+    const errorText = Array.from(parserErrors).map(node => node.textContent).join('\n');
+    respondWithError(`Error parsing XML:\n${errorText}`);
+    return;
+  }
   if (xmldoc.documentElement.nodeName !== 'action') {
     respondWithError(`Invalid root element: found ${xmldoc.documentElement.nodeName}, expected "action"`);
     return;
@@ -539,6 +733,10 @@ think-line ::= [^<]{25,100} "\\n"
     respondWithError('Multiple elements found inside <action />, only one item is allowed at a time');
     return;
   }
+
+  // update with this message before executing actions
+  session.messages.push(persistedMessage);
+  refreshSessions();
 
   let actionStopsSession = false;
   try {
@@ -566,7 +764,7 @@ think-line ::= [^<]{25,100} "\\n"
           actionResults.push(await executeAction(session, actionDef));
         } catch (e) {
           console.error(e);
-          actionResults.push(`<error><![CDATA[${e.message}]]></error>`);
+          actionResults.push(e.content ? e.content : `<error><![CDATA[${e.message}]]></error>`);
         }
       }
 
@@ -586,7 +784,6 @@ think-line ::= [^<]{25,100} "\\n"
     return;
   }
 
-  session.messages.push(persistedMessage);
   session.busy = false;
   refreshSessions();
 
@@ -595,9 +792,13 @@ think-line ::= [^<]{25,100} "\\n"
       session,
       {
         role: persistedMessage.role,
-        content: `  <result><![CDATA[
+        content: `<result>
 ${actionResults[0]}
-]]</result>`
+</result>
+<llmTokenTracking>
+  <used>${session.tokensUsed}</used>
+  <max>${16384 - 4096}</max>
+</llmTokenTracking>`
       }
     );
   }

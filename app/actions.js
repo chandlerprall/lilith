@@ -17,14 +17,36 @@ const actions = [
         throw new Error("task.start requires a title");
       }
 
-      const newSession = startSession({
+      if (session.meta.task.title === title) {
+        const error = new Error(`The current task is already titled "${title}", are you sure you need to start a new task instead of working within the current one?`);
+        error.content = `The current task is already titled "${title}", we should work on this task directly instead of starting something new.`;
+        throw error;
+      }
+
+      const newTask = session.meta.task.type === 'review-pr'
+        ? {
+          type: 'review-pr',
+          url: session.meta.task.url,
+          title,
+          instructions: `Task "${title}"\n---\n${description}`,
+        }
+        : {
+          type: 'freeform',
+          title,
+          description,
+        };
+      const newSession = await startSession({
         parent: session,
-        task: { type: 'freeform', title, description },
+        task: newTask,
         type: structuredClone(session.meta.type)
       });
       newSession.autorun = session.autorun; // inherit autorun
+      newSession.messages = structuredClone(session.messages); // inherit messages
 
-      continueSession(newSession, undefined, true);
+      continueSession(newSession, {
+        role: session.messages.at(-1)?.role === 'assistant' ? 'user' : 'assistant',
+        content: `New task "${title}" started, with instructions:\n---\n${description}\n---\nRemember to complete only this task, starting new tasks only as required to finish it.`,
+      }, true);
       activeSession.value = newSession;
       const { status, result } = await awaitSession(newSession);
       activeSession.value = session;
@@ -61,110 +83,6 @@ const actions = [
   equation CDATA #REQUIRED <!-- uses javascript syntax (including Math objects) -->
 >`,
   },
-
-  {
-    action: 'nodejs_runcode',
-    async handler(session, _, code) {
-      const tmpFile = path.join(os.tmpdir(), '__lilith.js');
-      writeFileSync(tmpFile, code);
-      const { stdout, stderr } = await execAsync(`node ${tmpFile}`);
-      return `
-<stdout><![CDATA[
-${stdout}
-]]></stdout>
-<stderr><![CDATA[
-${stderr}
-]]></stderr>
-`.trim();
-    },
-    definition: `<!-- text in the element body is executed in a nodejs shell, stdout and stderr are returned -->
-<!ELEMENT nodejs_runcode (#PCDATA)>`,
-  },
-
-  //   {
-  //     action: "issues.write",
-  //     async handler(session, { title }, description) {
-  //       const issue = await writeIssue(title, description);
-  //       return `Issue ${issue.id} created for ${issue.name}: ${description}`;
-  //     },
-  //     definition: `<!-- sets the titled issue's description to the element text -->
-  // <!ELEMENT issues.write (#PCDATA)>
-  // <!ATTLIST issues.write
-  // title CDATA #REQUIRED
-  // >`,
-  //   },
-  //   {
-  //     action: "issues.close",
-  //     async handler(session, { id }) {
-  //       await closeIssue(id);
-  //       return `Issue ${id} closed`;
-  //     },
-  //     definition: `<!ELEMENT issues.close EMPTY>
-  // <!ATTLIST issues.close
-  // id CDATA #REQUIRED <!-- id of the issue to close -->
-  // >`,
-  //   },
-
-  {
-    action: 'terminal.start',
-    async handler(session) {
-      return startTerminal(session);
-    },
-    definition: `<!-- open a new terminal in the project directory -->
-    <!-- **note** this returns the terminal id for use in the other terminal actions, you must wait before using a started temrinal -->
-<!ELEMENT terminal.start EMPTY>`,
-  },
-  {
-    action: 'terminal.run',
-    async handler(session, { id }, command) {
-      return await executeCommand(session, id, command);
-    },
-    get definition() {
-      return `<!-- sends input to the terminal's stdin, resulting stdout and stderr are returned -->
-<!ELEMENT terminal.run (#PCDATA)> <!-- element body is used as the command -->
-<!ATTLIST terminal.run
-id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't have an ID -->
->`;
-    },
-  },
-  {
-    action: 'terminal.read',
-    async handler(session, { id, lineCount }) {
-      return readTerminal(session, id, lineCount)
-    },
-    get definition() {
-      return `<!ELEMENT terminal.read EMPTY>
-<!ATTLIST terminal.read
-id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't have an ID -->
-lineCount CDATA #IMPLIED <!-- number of lines to limit read to, if omitted all lines are read -->
->`;
-    },
-  },
-  {
-    action: 'terminal.close',
-    async handler(session, { id }) {
-      closeTerminal(session, id);
-      return "terminal has been closed";
-    },
-    get definition() {
-      return `<!ELEMENT terminal.close EMPTY>
-<!ATTLIST terminal.close
-id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't have an ID -->
->`;
-    },
-  },
-
-  //   {
-  //     action: 'knowledgebase.write',
-  //     async handler(session, _, content) {
-  //       setKnowledgeBase(content);
-  //       return `Knowledgebase written`;
-  //     },
-  //     definition: `<! -- use the knowledge base to store information that is useful for anyone working on the project
-  //     it is useful to continually update this with new information as it is discovered or produced
-  //     we encourage markdown formatting -->
-  // <!ELEMENT knowledgebase.write (#PCDATA)> <!-- element body is used as the new knowledgebase -->`,
-  //   },
 
   {
     action: 'file.write',
@@ -254,6 +172,123 @@ path CDATA #REQUIRED <!-- absolute path to the file -->
   },
 
   {
+    action: 'nodejs_runcode',
+    async handler(session, _, code) {
+      const tmpFile = path.join(os.tmpdir(), '__lilith.js');
+      writeFileSync(tmpFile, code);
+      const { stdout, stderr } = await execAsync(`node ${tmpFile}`);
+      return `
+<stdout><![CDATA[
+${stdout}
+]]></stdout>
+<stderr><![CDATA[
+${stderr}
+]]></stderr>
+`.trim();
+    },
+    definition: `<!-- text in the element body is executed in a nodejs shell, stdout and stderr are returned -->
+<!ELEMENT nodejs_runcode (#PCDATA)>`,
+  },
+
+  //   {
+  //     action: "issues.write",
+  //     async handler(session, { title }, description) {
+  //       const issue = await writeIssue(title, description);
+  //       return `Issue ${issue.id} created for ${issue.name}: ${description}`;
+  //     },
+  //     definition: `<!-- sets the titled issue's description to the element text -->
+  // <!ELEMENT issues.write (#PCDATA)>
+  // <!ATTLIST issues.write
+  // title CDATA #REQUIRED
+  // >`,
+  //   },
+  //   {
+  //     action: "issues.close",
+  //     async handler(session, { id }) {
+  //       await closeIssue(id);
+  //       return `Issue ${id} closed`;
+  //     },
+  //     definition: `<!ELEMENT issues.close EMPTY>
+  // <!ATTLIST issues.close
+  // id CDATA #REQUIRED <!-- id of the issue to close -->
+  // >`,
+  //   },
+
+  {
+    action: 'terminal.start',
+    async handler(session) {
+      return startTerminal(session);
+    },
+    definition: `<!-- open a new terminal in the project directory -->
+    <!-- **note** this returns the terminal id for use in the other terminal actions, you must wait before using a started terminal -->
+<!ELEMENT terminal.start EMPTY>`,
+  },
+  {
+    action: 'terminal.run',
+    async handler(session, { id }, command) {
+      if (id == null) {
+        throw new Error("terminal.run requires an id attribute");
+      }
+      if (!command) {
+        throw new Error("terminal.run requires a command; the element body is used as the command");
+      }
+      return await executeCommand(session, id, command);
+    },
+    get definition() {
+      return `<!-- sends input to the terminal's stdin, resulting stdout and stderr are returned -->
+<!--
+in addition to base commands, the following tools are available:
+
+* \`gh\` CLI
+  * use fully-qualified URLS for issues & PRs
+  * use only read-only operations (do not write/post to github)
+-->
+<!ELEMENT terminal.run (#PCDATA)> <!-- element body is used as the command -->
+<!ATTLIST terminal.run
+id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't have an ID -->
+>`;
+    },
+  },
+  {
+    action: 'terminal.read',
+    async handler(session, { id, lineCount }) {
+      return readTerminal(session, id, lineCount)
+    },
+    get definition() {
+      return `<!ELEMENT terminal.read EMPTY>
+<!ATTLIST terminal.read
+id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't have an ID -->
+lineCount CDATA #IMPLIED <!-- number of lines to limit read to, if omitted all lines are read -->
+>`;
+    },
+  },
+  {
+    action: 'terminal.close',
+    async handler(session, { id }) {
+      closeTerminal(session, id);
+      return "terminal has been closed";
+    },
+    get definition() {
+      return `<!ELEMENT terminal.close EMPTY>
+<!ATTLIST terminal.close
+id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't have an ID -->
+>`;
+    },
+  },
+
+  //   {
+  //     action: 'knowledgebase.write',
+  //     async handler(session, _, content) {
+  //       setKnowledgeBase(content);
+  //       return `Knowledgebase written`;
+  //     },
+  //     definition: `<! -- use the knowledge base to store information that is useful for anyone working on the project
+  //     it is useful to continually update this with new information as it is discovered or produced
+  //     we encourage markdown formatting -->
+  // <!ELEMENT knowledgebase.write (#PCDATA)> <!-- element body is used as the new knowledgebase -->`,
+  //   },
+
+  {
     action: 'browser.open',
     async handler(session) {
       return await startPageSession(session);
@@ -329,7 +364,18 @@ export const filterActionsByTypes = (types) => {
   }
   return actions.filter(action => types.has(action.action));
 }
-export const getActionsContext = (definedActions = actions) => {
+export const getActionsContext = (session) => {
+  // const isPairingAndUser = session.meta.type.type === 'pairing' && session.messages.at(-1)?.role === 'assistant';
+  // const definedActions = isPairingAndUser ? filterActionsByTypes(['speak', 'task.start', 'task.success', 'task.failure']) : actions;
+  let definedActions = actions;
+
+  if (session.meta.type.type === 'pairing') {
+    if (session.meta.parent == null) {
+      // limit top-level pairing session
+      definedActions = filterActionsByTypes(['speak', 'task.start', 'task.success', 'task.failure']);
+    }
+  }
+
   const actionDefs = definedActions.reduce((acc, action) => {
     acc += action.definition + "\n\n";
     return acc;
@@ -347,7 +393,7 @@ export const getActionsContext = (definedActions = actions) => {
 More formally, the document follows this definition:
   
 \`\`\`dtd
-<!ELEMENT action (${getActionNames()})>
+<!ELEMENT action (${getActionNames(definedActions)})>
 <!ATTLIST action
   reason CDATA #REQUIRED <!-- describe why you are taking this action -->
 >
@@ -356,6 +402,9 @@ ${actionDefs}
 \`\`\`
 
 <speak /> content is delivered back to the engineer's boss for him to respond, while the results of any action(s) are delivered back to the staff engineer for them to continue on. Also note how there is always exactly one child element of <action />.
+
+> [!IMPORTANT]  
+> The actions are listed above in their order of preference. If multiple actions could be used to achieve the same result, the first one listed should be used. If you are unsure, use the first one listed, if that fails you can always take another approach.
 `;
 }
 
