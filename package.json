@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "description": "",
   "scripts": {
+    "dev": "tsc -w",
     "start": "electron ."
   },
   "private": true,
@@ -11,6 +12,7 @@
     "electron": "^34.0.1",
     "he": "^1.2.0",
     "puppeteer": "^24.1.1",
-    "turndown": "^7.2.0"
+    "turndown": "^7.2.0",
+    "typescript": "^5.7.3"
   }
 }
