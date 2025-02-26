@@ -1,12 +1,13 @@
 {
   "compilerOptions": {
     "outDir": "build",
-    "module": "Preserve",
-    "moduleResolution": "bundler",
+    "module": "Node16",
+    "moduleResolution": "node16",
     "removeComments": true,
     "preserveConstEnums": true,
     "sourceMap": true,
     "target": "ESNext",
+    "skipLibCheck": true,
 
     "strict": true,
     "alwaysStrict": true,
@@ -19,7 +20,7 @@
     "jsxImportSource": "@venajs"
   },
   "include": [
-    "src/**/*.ts",
-    "src/**/*.tsx"
+    "app/**/*.mts",
+    "app/**/*.tsx",
   ]
 }
