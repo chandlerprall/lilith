@@ -33,23 +33,25 @@
 		<script type="importmap">
 			{
 				"imports": {
-					"@venajs/core": "../node_modules/@venajs/core/build/index.js",
-					"he": "../node_modules/he/he.js"
+					"@venajs/core": "./node_modules/@venajs/core/build/index.js",
+					"@venajs/jsx-runtime": "./node_modules/@venajs/jsx-runtime/build/jsx-runtime.js",
+					"he": "./node_modules/he/he.js"
 				}
 			}
 		</script>
-		<script src="../node_modules/he/he.js"></script>
+		<script src="./node_modules/he/he.js"></script>
 		<script type="module">
-			import project from "./project.js";
+			import project from "./build/project.mjs";
 			process.chdir(project.directory);
 		</script>
 		<script type="module">
-			import "./tasks.js";
-			import "./session.js";
-			import "./persona.js";
-			import "./components/message.js";
-			import "./components/sidebar.js";
-			import "./components/chatview.js";
+			import "./build/tasks.mjs";
+			import "./build/session.mjs";
+
+			import "./build/persona.js";
+			import "./build/components/message.js";
+			import "./build/components/sidebar.js";
+			import "./build/components/chatview.js";
 		</script>
 	</body>
 </html>

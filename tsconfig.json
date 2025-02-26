@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "outDir": "build",
+    "module": "Node16",
+    "moduleResolution": "node16",
+    "removeComments": true,
+    "preserveConstEnums": true,
+    "sourceMap": true,
+    "target": "ESNext",
+    "skipLibCheck": true,
+
+    "strict": true,
+    "alwaysStrict": true,
+    "noImplicitAny": true,
+    "noImplicitThis": true,
+    "strictNullChecks": true,
+    "noUnusedLocals": true,
+
+    "jsx": "react-jsx",
+    "jsxImportSource": "@venajs"
+  },
+  "include": [
+    "app/**/*.mts",
+    "app/**/*.tsx",
+  ]
+}
