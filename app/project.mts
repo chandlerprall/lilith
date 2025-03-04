@@ -63,7 +63,7 @@ interface Project {
 }
 
 const { writeFileSync } = require("fs");
-const projectFilePath = "/Users/chandlerprall/projects/lilith-projects/game.json";
+const projectFilePath = "/Users/chandlerprall/projects/lilith-projects/webapp_app.json";
 const project: Project = require(projectFilePath);
 
 project.issues = new ProxySignal(project.issues);

@@ -376,7 +376,6 @@ You must respond and act as if you are a person named ${executor.name}: ${execut
 			return {};
 		},
 		preprocessMessages(session) {
-			console.log(this);
 			let { messages } = session;
 
 			// replace system message
@@ -439,7 +438,7 @@ class ExternallyResolvablePromise<T = any> {
 		return this.promise.finally(...args);
 	}
 }
-export const startSession = async ({ parent = undefined, task, type }: { parent?: string; task: SessionTask; type: SessionType }) => {
+export const startSession = async ({ parent = undefined, task, type }: { parent?: string; task: SessionTask; type: SessionType }, useAsActiveSession: boolean = false) => {
 	const existingIds = new Set(sessions.value.map((issue) => issue.id));
 	const id = getId(existingIds);
 
@@ -460,17 +459,21 @@ export const startSession = async ({ parent = undefined, task, type }: { parent?
 	};
 
 	sessions.push(session);
-	sessionPromises.set(session, new ExternallyResolvablePromise());
+	sessionPromises.set(session.id, new ExternallyResolvablePromise());
 
 	const sessionTaskDef = taskDefinitions.find((def) => def.type === task.type);
 	// @ts-expect-error having a sessionTaskDef proves this session is a valid argument
 	await sessionTaskDef?.initializeSession?.(session);
 
+  if (useAsActiveSession) {
+    activeSession.value = session;
+  }
+
 	return session;
 };
 
 export const awaitSession = (session: Session) => {
-	return sessionPromises.get(session);
+	return sessionPromises.get(session.id);
 };
 
 export const addMessageWithoutSending = (session: Session, message: Message) => {
@@ -802,7 +805,7 @@ think-line ::= [^<]{25,} "\\n"
 				// not a real action
 			} else if (actionDef.action === "task.success" || actionDef.action === "task.failure") {
 				actionStopsSession = true;
-				const sessionPromise = sessionPromises.get(session);
+				const sessionPromise = sessionPromises.get(session.id);
 				if (sessionPromise) {
 					if (actionDef.action === "task.success") {
 						sessionPromise.resolve({ status: "success", result: actionDef.text });

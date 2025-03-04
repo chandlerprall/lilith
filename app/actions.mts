@@ -65,7 +65,11 @@ const actions = [
 		handler() {
 			/* handled by project code */
 		},
-		definition: `<!-- mark the current task as completed successfully -->
+		definition: `
+<!--
+  mark the current task as completed successfully
+  results are returned to who started the task, use the element contents to fulfill the task's requirements
+-->
 <!ELEMENT task.success (#PCDATA)> <!-- results to return to who started the task, this should meet the requirements provided by the current task -->`,
 	},
 	{
@@ -73,8 +77,12 @@ const actions = [
 		handler() {
 			/* handled by project code */
 		},
-		definition: `<!-- mark the current task as failed  -->
-<!ELEMENT task.failure (#PCDATA)> <!-- results to return to who started the task, use the space to describe the results and why the task failed -->`,
+		definition: `
+<!--
+  mark the current task as failed
+  results are returned to who started the task, use the element contents to describe what happened and why the task failed
+-->
+<!ELEMENT task.failure (#PCDATA)>`,
 	},
 
 	{
