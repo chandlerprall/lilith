@@ -1,0 +1,162 @@
+import { registerComponent } from "@venajs/core";
+import { awaitSession, startSession } from "../session.mjs";
+import { SessionTaskDefinition } from "../tasks.mjs";
+
+const { execSync } = require("child_process");
+const { mkdirSync } = require("fs");
+const path = require("path");
+const os = require("os");
+
+declare global {
+	namespace Vena {
+		interface Elements {
+			"l-task-review-pr-config": {};
+		}
+	}
+
+	namespace Project {
+		interface SessionTasks {
+			"review-pr": {
+				type: "review-pr";
+				title: string;
+				url: string;
+				instructions: string;
+				checkoutDirectory?: string;
+				prDetails?: {
+					title: string;
+					body: string;
+					files: Array<{ path: string; additions: number; deletions: number }>;
+					baseRefOid: string;
+					headRefName: string;
+					headRefOid: string;
+					headRepository: {
+						name: string;
+						owner: {
+							login: string;
+						};
+					};
+				};
+			};
+		}
+	}
+}
+
+const ReviewPRTaskConfig = registerComponent("l-task-review-pr-config", ({ render, element, refs }) => {
+	Object.defineProperty(element, "value", {
+		get() {
+			return {
+				type: "review-pr",
+				url: (refs.url as HTMLInputElement).value,
+				instructions: (refs.instructions as HTMLInputElement).value,
+			};
+		},
+	});
+
+	render`
+    <style>
+      :host {
+        display: block;
+        width: 100%;
+      }
+
+      input {
+        width: 100%;
+      } 
+      textarea {
+        width: 100%;
+        height: 130px;
+      }
+    </style>
+    <input id="url" placeholder="URL of the Github PR" />
+    <textarea id="instructions" placeholder="Any specific instructions?"></textarea>
+  `;
+});
+
+export default {
+	type: "review-pr",
+	configElement: ReviewPRTaskConfig,
+	initializeSession: async (session) => {
+		// if this session doesn't have a parent, we need to initialize and execute the experience
+		if (session.meta.parent) return;
+
+		const start = Date.now();
+		const prDetailsString = execSync(`gh pr view ${session.meta.task.url} --json title,body,files,baseRefOid,headRefName,headRefOid,headRepository,headRepositoryOwner`).toString();
+		const prDetails = JSON.parse(prDetailsString);
+
+		// const repo = `${prDetails.headRepositoryOwner.login}/${prDetails.headRepository.name}`;
+		// const repoUrl = `git@github.com:${repo}.git`;
+		const sourceBranch = prDetails.headRefName;
+
+		const tmpDir = path.join(os.tmpdir(), "__lilith_git");
+
+		console.log("readying git repo");
+		console.log(`\t${tmpDir}`);
+
+		// if (existsSync(tmpDir)) {
+		// 	readdirSync(tmpDir).forEach((f: string) => rmSync(path.join(tmpDir, f), { recursive: true }));
+		// }
+
+		mkdirSync(tmpDir, { recursive: true });
+
+		// clone the commit from the repo
+		// execSync(`git clone ${repoUrl} --branch ${sourceBranch} --single-branch .`, { cwd: tmpDir });
+
+		// check out the commit
+		console.log(`\tchecking out ${sourceBranch}`);
+		execSync(`git checkout ${sourceBranch}`, { cwd: tmpDir });
+
+		session.meta.task.checkoutDirectory = tmpDir;
+		session.meta.task.prDetails = prDetails;
+
+		const end = Date.now();
+		console.log("\ttime taken:", end - start, "ms");
+
+		// get the PR diff
+		const diffString = execSync(`git diff ${prDetails.baseRefOid} ${prDetails.headRefOid}`, { cwd: tmpDir }).toString();
+
+		console.log(diffString);
+
+		const otherSession = await startSession(
+			{
+				parent: session.id,
+				// task: {
+				// 	type: "freeform",
+				// 	title: `Introduce yourselves`,
+				// 	description: `You are both new here, please introduce yourselves and chat for a bit. When finished, complete the task with an ASCII picture of a duck.`,
+				// },
+				task: {
+					type: "review-pr",
+					url: session.meta.task.url,
+					title: `Summarize PR "${prDetails.title}"`,
+					instructions: `The PR details are as follows:
+${prDetails.body}
+
+It has been checked out to the following directory: ${session.meta.task.checkoutDirectory}
+
+The diff is as follows:
+
+\`\`\`
+${diffString}
+\`\`\`
+
+Please summarize the PR and provide initial thoughts on the code changes.`,
+				},
+				type: {
+					type: "pairing",
+					executor: {
+						name: "Bill",
+						bio: "A dedicated software engineer",
+					},
+					pairer: {
+						name: "Tiffany",
+						bio: "An experienced software engineer",
+					},
+				},
+			},
+			true
+		);
+
+		const result = await awaitSession(otherSession);
+		console.log("DONE, RETURNED:", result);
+	},
+} satisfies SessionTaskDefinition<"review-pr">;
