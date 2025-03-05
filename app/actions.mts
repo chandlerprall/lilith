@@ -29,18 +29,20 @@ const actions = [
 							type: "review-pr",
 							url: session.meta.task.url,
 							title,
-							instructions: `Task "${title}"\n---\n${description}`,
 					  } satisfies Project.SessionTasks["review-pr"])
 					: ({
 							type: "freeform",
 							title,
 							description,
 					  } satisfies Project.SessionTasks["freeform"]);
-			const newSession = await startSession({
-				parent: session.id,
-				task: newTask,
-				type: structuredClone(session.meta.type),
-			});
+			const newSession = await startSession(
+				{
+					parent: session.id,
+					task: newTask,
+					type: structuredClone(session.meta.type),
+				},
+				true
+			);
 			newSession.autorun = session.autorun; // inherit autorun
 			newSession.messages = structuredClone(session.messages); // inherit messages
 
@@ -48,7 +50,7 @@ const actions = [
 				role: session.messages.at(-1)?.role === "assistant" ? "user" : "assistant",
 				content: `New task "${title}" started, with instructions:\n---\n${description}\n---\nRemember to complete only this task, starting new tasks only as required to finish it.`,
 			});
-			activeSession.value = newSession;
+
 			const { status, result } = await awaitSession(newSession);
 			activeSession.value = session;
 

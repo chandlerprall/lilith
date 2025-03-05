@@ -20,7 +20,6 @@ declare global {
 				type: "review-pr";
 				title: string;
 				url: string;
-				instructions: string;
 				checkoutDirectory?: string;
 				prDetails?: {
 					title: string;
@@ -47,7 +46,6 @@ const ReviewPRTaskConfig = registerComponent("l-task-review-pr-config", ({ rende
 			return {
 				type: "review-pr",
 				url: (refs.url as HTMLInputElement).value,
-				instructions: (refs.instructions as HTMLInputElement).value,
 			};
 		},
 	});
@@ -112,34 +110,17 @@ export default {
 		console.log("\ttime taken:", end - start, "ms");
 
 		// get the PR diff
+		execSync(`git fetch origin`, { cwd: tmpDir });
 		const diffString = execSync(`git diff ${prDetails.baseRefOid} ${prDetails.headRefOid}`, { cwd: tmpDir }).toString();
-
 		console.log(diffString);
 
 		const otherSession = await startSession(
 			{
 				parent: session.id,
-				// task: {
-				// 	type: "freeform",
-				// 	title: `Introduce yourselves`,
-				// 	description: `You are both new here, please introduce yourselves and chat for a bit. When finished, complete the task with an ASCII picture of a duck.`,
-				// },
 				task: {
 					type: "review-pr",
 					url: session.meta.task.url,
 					title: `Summarize PR "${prDetails.title}"`,
-					instructions: `The PR details are as follows:
-${prDetails.body}
-
-It has been checked out to the following directory: ${session.meta.task.checkoutDirectory}
-
-The diff is as follows:
-
-\`\`\`
-${diffString}
-\`\`\`
-
-Please summarize the PR and provide initial thoughts on the code changes.`,
 				},
 				type: {
 					type: "pairing",
@@ -158,5 +139,8 @@ Please summarize the PR and provide initial thoughts on the code changes.`,
 
 		const result = await awaitSession(otherSession);
 		console.log("DONE, RETURNED:", result);
+	},
+	continueSession: async (session) => {
+		return false;
 	},
 } satisfies SessionTaskDefinition<"review-pr">;

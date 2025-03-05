@@ -1,7 +1,7 @@
 import { registerComponent, Signal } from "@venajs/core";
 import project, { ActionNode, getSessionById, Message, MessageRole, SendableMessage, Session, SessionMeta, sessions, SessionTask, SessionType } from "./project.mjs";
 import { executeAction, getActionsContext } from "./actions.mjs";
-import { taskDefinitions } from "./tasks.mjs";
+import { SessionTaskDefinition, taskDefinitions } from "./tasks.mjs";
 import { getId } from "./utils/id.mjs";
 import { ActionType } from "./actions.mjs";
 
@@ -136,7 +136,8 @@ ${session.meta.task.description}
 **You are reviewing this PR:**
 ${session.meta.task.url}
 
-${session.meta.task.instructions ? `**Additional instructions:**\n---\n${session.meta.task.instructions}` : ""}
+${"instructions" in session.meta.task ? `**Additional instructions:**\n---\n${session.meta.task.instructions}` : ""}
+
 ## Pull request details
 
 ### Checkout directory
@@ -461,13 +462,13 @@ export const startSession = async ({ parent = undefined, task, type }: { parent?
 	sessions.push(session);
 	sessionPromises.set(session.id, new ExternallyResolvablePromise());
 
-	const sessionTaskDef = taskDefinitions.find((def) => def.type === task.type);
+	const sessionTaskDef = getTaskDefinition(session);
 	// @ts-expect-error having a sessionTaskDef proves this session is a valid argument
 	await sessionTaskDef?.initializeSession?.(session);
 
-  if (useAsActiveSession) {
-    activeSession.value = session;
-  }
+	if (useAsActiveSession) {
+		activeSession.value = session;
+	}
 
 	return session;
 };
@@ -481,14 +482,28 @@ export const addMessageWithoutSending = (session: Session, message: Message) => 
 	refreshSessions();
 };
 
-export const continueSession = (session: Session, message?: Message, forceSend: boolean = false) => {
+const getTaskDefinition = <S extends Session>(session: S): S extends { meta: { task: { type: infer TaskType } } } ? (TaskType extends SessionTask["type"] ? SessionTaskDefinition<TaskType> : never) : never =>
+	// @ts-expect-error
+	taskDefinitions.find((def) => def.type === session.meta.task.type);
+
+export const continueSession = async (session: Session, message?: Message, forceSend: boolean = false) => {
 	if (message && message.content) {
 		session.messages.push(message);
 		refreshSessions();
 	}
 
 	if (session.autorun || forceSend) {
-		sendMessages(session);
+		let doSendMessages = true;
+
+		const taskDef = getTaskDefinition(session);
+		if ("continueSession" in taskDef) {
+			// @ts-expect-error having a taskDef proves this fn call is all valid
+			doSendMessages = await taskDef.continueSession!(session);
+		}
+
+		if (doSendMessages) {
+			sendMessages(session);
+		}
 	} else {
 		session.busy = false;
 		refreshSessions();
@@ -499,7 +514,7 @@ export const resetSession = async (session: Session) => {
 	session.messages = getInitialMessages(session.meta, session);
 	session.busy = false;
 
-	const sessionTaskDef = taskDefinitions.find((def) => def.type === session.meta.task.type);
+	const sessionTaskDef = getTaskDefinition(session);
 	// @ts-expect-error having a sessionTaskDef proves this fn call is all valid
 	await sessionTaskDef.initializeSession?.(session);
 
@@ -581,7 +596,7 @@ Hi! I guess we should get started on our task. I'll repeat its details here:
 
 ${meta.task?.url}
 ---
-${meta.task?.instructions ?? ""}
+${"instructions" in meta.task ? meta.task.instructions : ""}
 
 Remember that we need to make the best use of tasking to avoid overloading the context window. Let's begin by starting a new task for the first step: exploring the PR and understanding the problem space. The task should collect and return the PR title+description, and any linked issue(s).
 ]]></speak>
@@ -596,7 +611,7 @@ Remember that we need to make the best use of tasking to avoid overloading the c
 
 ${meta.task?.url}
 ---
-${meta.task?.instructions ?? ""}
+${"instructions" in meta.task ? meta.task.instructions : ""}
 `,
 					},
 				],

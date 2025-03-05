@@ -1,5 +1,5 @@
 import { registerComponent, Signal, element } from "@venajs/core";
-import { activeSession, continueSession, sessionDefinitions, startSession } from "../session.mjs";
+import { continueSession, sessionDefinitions, startSession } from "../session.mjs";
 import { taskDefinitions } from "../tasks.mjs";
 import { SessionTask, SessionType } from "../project.mjs";
 
@@ -11,20 +11,18 @@ declare global {
 	}
 }
 
-registerComponent("l-newchat", ({ render, refs, emit }) => {
-	const taskElement = new Signal(taskDefinitions[0].configElement);
-	taskElement.on(rerender);
-	const configureElement = new Signal(sessionDefinitions[0].configElement);
-	configureElement.on(rerender);
+registerComponent("l-newchat", ({ render, refs, emit, element: me }) => {
+	const selectedTask = new Signal(taskDefinitions[0]);
+	const selectedType = new Signal(sessionDefinitions[0]);
 	rerender();
 
 	async function triggerSession() {
 		// @ts-expect-error
-		const task: SessionTask = refs.taskSelection.value;
+		const task: SessionTask = me.shadowRoot.getElementById("taskSelection").value;
 		// @ts-expect-error
-		const type: SessionType = refs.selection.value;
-		const newSession = await startSession({ task, type });
-		activeSession.value = newSession;
+		const type: SessionType = me.shadowRoot.getElementById("typeSelection").value;
+
+		const newSession = await startSession({ task, type }, true);
 
 		emit("create", newSession);
 
@@ -32,9 +30,6 @@ registerComponent("l-newchat", ({ render, refs, emit }) => {
 	}
 
 	function rerender() {
-		const selected = sessionDefinitions.find((session) => session.configElement === configureElement.value);
-		const selectedTask = taskDefinitions.find((task) => task.configElement === taskElement.value);
-
 		render(
 			<>
 				<style>{`
@@ -67,31 +62,27 @@ registerComponent("l-newchat", ({ render, refs, emit }) => {
 
 					<span>
 						<label htmlFor="task">task</label>
-						<select id="task" onchange={(e) => (taskElement.value = taskDefinitions.find((task) => task.type === (e.target as HTMLSelectElement).value)!.configElement)}>
+						<select id="task" onchange={(e) => (selectedTask.value = taskDefinitions.find((task) => task.type === (e.target as HTMLSelectElement).value)!)}>
 							{taskDefinitions.map((task) => (
-								<option value={task.type} selected={selectedTask!.type === task.type}>
-									{task.type}
-								</option>
+								<option value={task.type}>{task.type}</option>
 							))}
 						</select>
 					</span>
 
-					{element`<${`${taskElement}`} id="taskSelection"></${`${taskElement}`}>`}
+					{selectedTask.map((selectedTask) => element`<${`${selectedTask.configElement}`} id="taskSelection"></${`${selectedTask.configElement}`}>`)}
 
 					<hr />
 
 					<span>
 						<label htmlFor="sessionType">session type</label>
-						<select id="sessionType" onchange={(e) => (configureElement.value = sessionDefinitions.find((session) => session.type === (e.target as HTMLSelectElement).value)!.configElement)}>
+						<select id="sessionType" onchange={(e) => (selectedType.value = sessionDefinitions.find((session) => session.type === (e.target as HTMLSelectElement).value)!)}>
 							{sessionDefinitions.map((session) => (
-								<option value={session.type} selected={selected!.type === session.type}>
-									{session.type}
-								</option>
+								<option value={session.type}>{session.type}</option>
 							))}
 						</select>
 					</span>
 
-					{element`<${`${configureElement}`} id="selection"></${`${configureElement}`}>`}
+					{selectedType.map((selectedType) => element`<${`${selectedType.configElement}`} id="typeSelection"></${`${selectedType.configElement}`}>`)}
 
 					<hr />
 
