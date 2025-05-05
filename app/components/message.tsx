@@ -74,6 +74,7 @@ registerComponent("l-message", ({ render, attributes }) => {
         &[data-open] {
           max-height: unset;
           overflow: visible;
+          text-wrap: auto;
         }
       }
     `}</style>

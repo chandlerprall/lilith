@@ -44,6 +44,7 @@ export interface Session {
 	busy: boolean;
 	autorun: boolean;
 	tokensUsed: number | null;
+	availableActions?: Array<ActionType>;
 }
 
 interface Issue {

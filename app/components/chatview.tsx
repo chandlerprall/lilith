@@ -67,13 +67,13 @@ registerComponent("l-chatview", ({ render, element: me }) => {
 		</div>
 	);
 
-	const sessionTabs = element(
-		<nav>
-			{sessions.map((sessions) =>
-				sessions.map((session) => {
+	const sessionTabs = Signal.from(activeSession, sessions).map(([activeSessionValue, sessionsValue]) =>
+		element(
+			<nav>
+				{sessionsValue.map((session) => {
 					return element(
 						<button
-							data-active={activeSession.value === session}
+							data-active={activeSessionValue === session}
 							onclick={() => {
 								activeSession.value = session;
 								refreshSessions();
@@ -82,9 +82,9 @@ registerComponent("l-chatview", ({ render, element: me }) => {
 							{session.meta.task.type !== "none" && session.meta.task.title ? session.meta.task.title : "untitled"}
 						</button>
 					);
-				})
-			)}
-		</nav>
+				})}
+			</nav>
+		)
 	);
 
 	render(

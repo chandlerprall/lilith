@@ -1,13 +1,44 @@
-import { Session } from "./project.mjs";
+import { Message, Session, SessionTask } from "./project.mjs";
 import { closePageSession, executeInPage, navigateTo, readBrowserPage, startPageSession } from "./utils/browser.mjs";
 import { executeCommand, startTerminal, closeTerminal, readTerminal } from "./utils/terminal.mjs";
-import { activeSession, awaitSession, continueSession, startSession } from "./session.mjs";
+import { activeSession, addMessageWithoutSending, awaitSession, continueSession, flipRole, getTaskDefinition, startSession } from "./session.mjs";
 const os = require("os");
 const path = require("path");
 const { exec } = require("child_process");
 const { promisify } = require("util");
 const { readFileSync, writeFileSync, unlinkSync } = require("fs");
 const execAsync = promisify(exec);
+
+interface TaskResult {
+	status: "success" | "failure";
+	result: string;
+}
+
+export async function startTask(session: Session, task: SessionTask, options?: { copyMessages?: boolean; newMessages?: Message[] }): Promise<TaskResult> {
+	const newSession = await startSession(
+		{
+			parent: session.id,
+			task,
+			type: structuredClone(session.meta.type),
+		},
+		true
+	);
+	newSession.autorun = session.autorun; // inherit autorun
+	if (options?.copyMessages ?? true) {
+		newSession.messages = structuredClone(session.messages); // inherit messages
+	} else {
+		newSession.messages = [];
+	}
+
+	options?.newMessages?.forEach((message) => addMessageWithoutSending(newSession, message));
+
+	continueSession(newSession);
+
+	const result = await awaitSession(newSession);
+	activeSession.value = session;
+
+	return result;
+}
 
 const actions = [
 	{
@@ -23,36 +54,19 @@ const actions = [
 				throw error;
 			}
 
-			const newTask =
-				session.meta.task.type === "review-pr"
-					? ({
-							type: "review-pr",
-							url: session.meta.task.url,
-							title,
-					  } satisfies Project.SessionTasks["review-pr"])
-					: ({
-							type: "freeform",
-							title,
-							description,
-					  } satisfies Project.SessionTasks["freeform"]);
-			const newSession = await startSession(
-				{
-					parent: session.id,
-					task: newTask,
-					type: structuredClone(session.meta.type),
-				},
-				true
-			);
-			newSession.autorun = session.autorun; // inherit autorun
-			newSession.messages = structuredClone(session.messages); // inherit messages
-
-			continueSession(newSession, {
-				role: session.messages.at(-1)?.role === "assistant" ? "user" : "assistant",
-				content: `New task "${title}" started, with instructions:\n---\n${description}\n---\nRemember to complete only this task, starting new tasks only as required to finish it.`,
+			const newTask = {
+				type: "freeform",
+				title,
+				description,
+			} satisfies Project.SessionTasks["freeform"];
+			const { status, result } = await startTask(session, newTask, {
+				newMessages: [
+					{
+						role: flipRole(session.messages.at(-1)?.role),
+						content: `New task "${title}" started, with instructions:\n---\n${description}\n---\nRemember to complete only this task, starting new tasks only as required to finish it.`,
+					},
+				],
 			});
-
-			const { status, result } = await awaitSession(newSession);
-			activeSession.value = session;
 
 			return `${status}\n---\n${result}`;
 		},
@@ -70,9 +84,9 @@ const actions = [
 		definition: `
 <!--
   mark the current task as completed successfully
-  results are returned to who started the task, use the element contents to fulfill the task's requirements
+  element content must be the task output, whatever output demonstrates the task to completetion; this is returned to whomever ordered the task
 -->
-<!ELEMENT task.success (#PCDATA)> <!-- results to return to who started the task, this should meet the requirements provided by the current task -->`,
+<!ELEMENT task.success (#PCDATA)> <!-- output to complete the task with -->`,
 	},
 	{
 		action: "task.failure",
@@ -384,7 +398,7 @@ id CDATA #REQUIRED <!-- id of the terminal, start a terminal first if you don't 
 	},
 ] as const;
 
-type Action = (typeof actions)[number];
+export type Action = (typeof actions)[number];
 export type ActionType = Action["action"];
 
 export const getActionNames = (definedActions: ReadonlyArray<Action> = actions) => {
@@ -401,7 +415,8 @@ export const getActionsContext = (session: Session) => {
 	// const isPairingAndUser = session.meta.type.type === 'pairing' && session.messages.at(-1)?.role === 'assistant';
 	// const definedActions = isPairingAndUser ? filterActionsByTypes(['speak', 'task.start', 'task.success', 'task.failure']) : actions;
 
-	let definedActions: ReadonlyArray<Action> = actions;
+	const taskDef = getTaskDefinition(session);
+	let definedActions: ReadonlyArray<Action> = taskDef.getActions?.(session as any) ?? actions;
 
 	if (session.meta.type.type === "pairing") {
 		if (session.meta.parent == null) {

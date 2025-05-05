@@ -258,7 +258,9 @@ function getContext(session: Session) {
 			introduction = `The following is an interaction log between ${session.meta.type.who.name} and their boss.`;
 			break;
 		case "pairing":
-			introduction = `The following is an interaction log between ${session.meta.type.executor.name} and ${session.meta.type.pairer.name}.`;
+			introduction = `The following is an interaction log from a pairing session.
+Notice how talkative both parties are, applying their wealth of experience and insight to deal with any issue that arises. They work together, briefly discussing next the steps before taking action to move the project forward.
+      `;
 			break;
 	}
 
@@ -455,7 +457,7 @@ export const startSession = async ({ parent = undefined, task, type }: { parent?
 		messages: getInitialMessages(meta),
 
 		busy: false,
-		autorun: false, //type.type !== 'chat',
+		autorun: type.type !== "chat",
 		tokensUsed: null,
 	};
 
@@ -477,12 +479,16 @@ export const awaitSession = (session: Session) => {
 	return sessionPromises.get(session.id);
 };
 
-export const addMessageWithoutSending = (session: Session, message: Message) => {
-	session.messages.push(message);
+export type MessageMaybeWithRole = Omit<Message, "role"> & { role?: Message["role"] };
+export const addMessageWithoutSending = (session: Session, message: MessageMaybeWithRole) => {
+	session.messages.push({
+		...message,
+		role: message.role ?? (session.messages.length ? flipRole(session.messages.at(0)!.role) : "user"),
+	});
 	refreshSessions();
 };
 
-const getTaskDefinition = <S extends Session>(session: S): S extends { meta: { task: { type: infer TaskType } } } ? (TaskType extends SessionTask["type"] ? SessionTaskDefinition<TaskType> : never) : never =>
+export const getTaskDefinition = <S extends Session>(session: S): S extends { meta: { task: { type: infer TaskType } } } ? (TaskType extends SessionTask["type"] ? SessionTaskDefinition<TaskType> : never) : never =>
 	// @ts-expect-error
 	taskDefinitions.find((def) => def.type === session.meta.task.type);
 
@@ -570,7 +576,7 @@ We should focus on the task at hand, and not the project as a whole. I want to b
 </think>
 <?xml version="1.0" encoding="UTF-8"?>
 <action reason="I want to be friendly, but make sure we focus on the task.">
-<speak><![CDATA[Hi! I guess we should get started on our task. I'll repeat its details here:\n${meta.task?.title}\n---\n${meta.task?.description}]]></speak>
+<speak><![CDATA[Hi! I guess we should get started on our task. I'll repeat it here:\n"${meta.task?.title}"]]></speak>
 </action>`,
 				think: "We should focus on the task at hand, and not the project as a whole. I want to be friendly and helpful with who I am pairing with, so I will repeat the task details to them.",
 				actions: [
@@ -578,7 +584,7 @@ We should focus on the task at hand, and not the project as a whole. I want to b
 						reason: "I want to be friendly, but make sure we focus on the task.",
 						action: "speak",
 						args: {},
-						text: `Hi! I guess we should get started on our task. I'll repeat its details here:\n${meta.task?.title}\n---\n${meta.task?.description}`,
+						text: `Hi! I guess we should get started on our task. I'll repeat it here:\n"${meta.task?.title}"`,
 					},
 				],
 				actionResults: [],
@@ -592,11 +598,7 @@ We should focus on the task at hand, and not the project as a whole. I want to b
 <?xml version="1.0" encoding="UTF-8"?>
 <action reason="I want to be friendly, but make sure we focus on the task.">
 <speak><![CDATA[
-Hi! I guess we should get started on our task. I'll repeat its details here:
-
-${meta.task?.url}
----
-${"instructions" in meta.task ? meta.task.instructions : ""}
+Hi! I guess we should get started on our task. I'll repeat it here: "Review PR ${meta.task?.url}".
 
 Remember that we need to make the best use of tasking to avoid overloading the context window. Let's begin by starting a new task for the first step: exploring the PR and understanding the problem space. The task should collect and return the PR title+description, and any linked issue(s).
 ]]></speak>
@@ -607,12 +609,8 @@ Remember that we need to make the best use of tasking to avoid overloading the c
 						reason: "I want to provide a helpful response",
 						action: "speak",
 						args: {},
-						text: `Hi! I guess we should get started on our task. I'll repeat its details here:
-
-${meta.task?.url}
----
-${"instructions" in meta.task ? meta.task.instructions : ""}
-`,
+						text: `Hi! I guess we should get started on our task. I'll repeat it here: "Review PR ${meta.task?.url}".
+            Remember that we need to make the best use of tasking to avoid overloading the context window. Let's begin by starting a new task for the first step: exploring the PR and understanding the problem space. The task should collect and return the PR title+description, and any linked issue(s).`,
 					},
 				],
 				actionResults: [],
@@ -623,7 +621,7 @@ ${"instructions" in meta.task ? meta.task.instructions : ""}
 	return messages;
 }
 
-const flipRole = (role: MessageRole) => (role === "user" ? "assistant" : "user");
+export const flipRole = (role: MessageRole | undefined) => (role === "user" ? "assistant" : "user");
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -716,7 +714,7 @@ root ::= (
     "</action>"
 )
 
-think-line ::= [^<]{25,} "\\n"
+think-line ::= [a-zA-Z0-9 .(){}\`+=:-]{25,} "\\n"
 `,
 			// @ts-expect-error having a sessionTypeDef proves this fn call is all valid
 			...(sessionTypeDef?.getApiParams?.(session) ?? {}),
