@@ -1,8 +1,0 @@
-{
-  "name": "Project",
-  "directory": "/path/to/project",
-  "context": "You are writing a web app using React.js",
-  "issues": [],
-  "sessions": [],
-  "knowledgeBase": null
-}
