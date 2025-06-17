@@ -1,0 +1,15 @@
+{
+	"compilerOptions": {
+		"rootDir": "src",
+		"outDir": "build",
+		"alwaysStrict": true,
+		"strict": true,
+
+		"module": "preserve",
+		"lib": ["es2023", "dom"],
+		"target": "es2023"
+	},
+	"include": [
+		"src/**/*"
+	]
+}

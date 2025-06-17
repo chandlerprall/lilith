@@ -1,0 +1,10 @@
+{
+  "name": "lilith-workspace",
+  "version": "2.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/chandlerprall/lilith",
+  "author": "Chandler Prall <chandler.prall@gmail.com>",
+  "license": "OSL-3.0",
+  "private": true,
+  "workspaces": ["packages/*"]
+}

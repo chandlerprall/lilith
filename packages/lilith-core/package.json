@@ -1,0 +1,17 @@
+{
+  "name": "lilith-core",
+  "version": "2.0.0",
+  "main": "build/index.js",
+  "type": "module",
+  "repository": "https://github.com/chandlerprall/lilith",
+  "author": "Chandler Prall <chandler.prall@gmail.com>",
+  "license": "OSL-3.0",
+  "private": true,
+  "devDependencies": {
+    "@types/node": "^24.0.1",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "fast-xml-parser": "^5.2.5"
+  }
+}
