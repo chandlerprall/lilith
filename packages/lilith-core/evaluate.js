@@ -19,13 +19,15 @@ import { calculator } from './build/tools.js';
 const result = await execute({
 	persona: executor,
 	prompt: `
-[
+{
 current_line=1
-]
+}
 1: find the first 5 fibonacci numbers
 2: square each number
-3: add the sum of the first 4 squares, then subtract the fifth 
-4: create a javascript terminal app that asks the user to guess a number, and only reports they are correct if they guess our target integer
+3: add the sum of the first 2 squares together
+4: add the sum of the last 3 squares together
+5: subtract the first sum from the second  
+6: create a javascript terminal app that asks the user to guess a number, and only reports they are correct if they guess the result from the previous step
   `,
 	availablePersonas: [programmer],
 	availableTools: [calculator],

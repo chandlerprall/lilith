@@ -2,7 +2,10 @@ import { XMLParser } from 'fast-xml-parser';
 
 export type InvariantCheck = (xmldoc: object) => void;
 
-const parser = new XMLParser();
+const parser = new XMLParser({
+	ignoreAttributes: false,
+	attributesGroupName: "@_attrs",
+});
 
 export function parseXml(source: string, invariantChecks: InvariantCheck[] = []) {
 	let xmldoc: object;

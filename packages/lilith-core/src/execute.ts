@@ -5,6 +5,7 @@ import type { Tool } from './tools.js';
 
 interface Usage {
 	result: string;
+	reason: string;
 	history: ExecutionHistory[];
 }
 
@@ -44,6 +45,8 @@ To delegate to an agent you must respond with exactly an XML document of the for
 e.g.
 
 <agent_delegation><agent_name>Cat expert</agent_name><input>What is the best way to calm a kitten?</input></agent_delegation>
+
+NOTE: the agent delegation input is the totality of what that agent will be prompted with, make sure to include all important information.
 ---
 		`;
 	} else {
@@ -70,6 +73,12 @@ e.g.
 	context += `
 After calling an agent or tool their response will be provided to you as additional input, and you will be able to continue iterating with agents/tools or decide to update the program state for the next execution cycle.
 
+Do not call a tool if you already know what it will return. If you aren't 100% sure, verify with a tool. For example, 5+5=10. The square root of 103 should be a tool call.
+
+Remember to call agents and tools with valid XML! Unless the input content is obviously safe you should wrap them in <![CDATA[ ... ]]>
+
+Likewise, results should be reported within <![CDATA[ ... ]]> unless it is obviously safe. 
+
 When you have the information to finish the task you will report back with the <result></result> tag:
 
 <result>the final result here</result>
@@ -78,21 +87,24 @@ Results should attempt to be terse but with differentiating information. For exa
 	`;
 
 	const executionHistory: ExecutionHistory = [];
-	const errors: string[] = [];
+	const currentStepExecutions: ExecutionHistory = [];
+	const currentStepErrors: string[] = [];
 	while (true) {
-		let currentPrompt = prompt;
+		let currentPrompt = '';
 
 		// add history to context
-		if (executionHistory.length) {
+		if (currentStepExecutions.length) {
 			currentPrompt += `\n---
-For guidance, these steps have been taken so far in this task:
-${executionHistory.map(historyItem => {
+Steps you have taken so far at this line:
+${currentStepExecutions.map(historyItem => {
 	if ("tool" in historyItem) {
 		return `* tool ${historyItem.tool.name}
+\t* reason: ${historyItem.reason}
 \t* input: ${historyItem.input}
 \t* result: ${historyItem.result}`;
 	} else if ("agent" in historyItem) {
 		return `* agent ${historyItem.agent.name}
+\t* reason: ${historyItem.reason}
 \t* input: ${historyItem.prompt}
 \t* result: ${historyItem.result}`;
 	}
@@ -101,16 +113,46 @@ ${executionHistory.map(historyItem => {
 		}
 
 		// add errors to context
-		if (errors.length) {
+		if (currentStepErrors.length) {
 			currentPrompt += `\n---
 For guidance, these error(s) have been encountered while previously performing this step:
-${errors.map(error => `* ${error}`).join('\\n')}
+${currentStepErrors.map(error => `* ${error}`).join('\n')}
 ---`;
 		}
 
+		currentPrompt += '\n' + prompt;
+
 		const llmResponse = await llmRequest(
 			context,
-			[{ role: 'user', content: currentPrompt }]
+			[{ role: 'user', content: currentPrompt }],
+			{
+				grammar_string: `
+# root specifies the pattern for the overall output
+root ::= (
+    # it must start with the characters "<think>" followed by some lines of thought,
+    # followed by the closing "</think>" and a trailing newline
+    # "<think>\\\\n" think-line{1,} "</think>\\\\n"
+
+    # then an XML declaration and start of document
+    # "<?xml version=\\\\"1.0\\\\" encoding=\\\\"UTF-8\\\\"?>\\\\n"
+
+    # finally the action block
+    elements
+
+    .+
+
+    "</" closingtags ">"
+)
+
+reasontags ::= "agent_delegation" | "tool_use"
+reasonelements ::= "<" reasontags " reason=\\"" .{1,250} "\\">"
+
+resultelement ::= "<result>"
+
+elements ::= reasonelements | resultelement
+closingtags ::= "agent_delegation" | "tool_use" | "result"
+				`
+			}
 		);
 
 		console.log(llmResponse.result);
@@ -131,6 +173,7 @@ ${errors.map(error => `* ${error}`).join('\\n')}
 			switch (cmd) {
 				case 'agent_delegation': {
 					const agentDelegation = (xml as AgentDelegationShape).agent_delegation!;
+					const reason = agentDelegation['@_attrs']['@_reason'];
 					const agentName = agentDelegation.agent_name;
 					const agentInput = agentDelegation.input;
 
@@ -140,25 +183,30 @@ ${errors.map(error => `* ${error}`).join('\\n')}
 						prompt: agentInput,
 					});
 
-					executionHistory.push({ agent, prompt: agentInput, result: result.llmResponse.result, history: result.history });
+					executionHistory.push({ agent, prompt: agentInput, result: result.llmResponse.result, reason, history: result.history });
+					currentStepExecutions.push({ agent, prompt: agentInput, result: result.llmResponse.result, reason, history: result.history });
 
 					break;
 				}
 				case 'tool_use': {
-					const toolDelegation = (xml as ToolUseShape).tool_use!;
-					const toolName = toolDelegation.tool_name;
-					const toolInput = toolDelegation.input;
+					const toolUse = (xml as ToolUseShape).tool_use!;
+					const reason = toolUse['@_attrs']['@_reason'];
+					const toolName = toolUse.tool_name;
+					const toolInput = toolUse.input;
 
 					const tool = availableTools.find(({ name }) => name === toolName)!;
 					const { result, history } = tool.runner(toolInput);
-					executionHistory.push({ tool, input: toolInput, result, history });
+					executionHistory.push({ tool, input: toolInput, result, reason, history });
+					currentStepExecutions.push({ tool, input: toolInput, result, reason, history });
 
 					break;
 				}
 
 				case 'result': {
-					const formattedResult = (xml as { result: string }).result; // remove the wrapping `result` tags
+					const formattedResult = (xml as { result: string }).result.trim(); // remove the wrapping `result` tags
 					const onResultResult = persona.onResult?.(prompt, formattedResult);
+					currentStepExecutions.length = 0;
+					currentStepErrors.length = 0;
 					if (onResultResult !== undefined) {
 						prompt = onResultResult;
 					} else {
@@ -173,7 +221,8 @@ ${errors.map(error => `* ${error}`).join('\\n')}
 				}
 			}
 		} catch(e) {
-			errors.push((e as Error).message);
+			debugger;
+			currentStepErrors.push(`${e}`);
 		}
 	}
 }
@@ -194,6 +243,9 @@ interface AgentDelegationShape {
 	agent_delegation?: {
 		agent_name: string;
 		input: string;
+		'@_attrs': {
+			'@_reason': string;
+		};
 	}
 }
 const invariant_agent_delegation = (availablePersonas: Persona[], x: AgentDelegationShape) => {
@@ -212,6 +264,9 @@ interface ToolUseShape {
 	tool_use?: {
 		tool_name: string;
 		input: string;
+		'@_attrs': {
+			'@_reason': string;
+		};
 	}
 }
 const invariant_tool_use = (availableTools: Tool[], x: ToolUseShape) => {
@@ -232,6 +287,6 @@ interface ProgramStateShape {
 const invariant_result: InvariantCheck = (x: ProgramStateShape) => {
 	if ('result' in x) {
 		const { result } = x;
-		if (typeof result !== 'string') throw new Error(`result expected to be string, got ${typeof result}`);
+		if (typeof result !== 'string') throw new Error(`result expected to be a string, got ${typeof result}`);
 	}
 }
